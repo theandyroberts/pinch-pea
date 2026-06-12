@@ -296,6 +296,8 @@ async function boot() {
     }
   }
 
+  if (DEV) window.__game = { world, player, inventory, interact, quests, jaspea, input, followCam, save, gen, audio, ui };
+
   await audioReady;
   ui.showStart(() => {
     audio.unlock();

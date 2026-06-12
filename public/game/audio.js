@@ -6,6 +6,11 @@ const MUTE_LS_KEY = "pinchy-pea-muted";
 const NO_OPTS = {};
 const STEP_OPTS = { volume: 0.55, ratejitter: 0.18 };
 
+// 0.1s of 8kHz mono silence — loops in a hidden <audio> element so iOS keeps the
+// page's audio session in "playback" mode (ignores the hardware silent switch).
+const SILENT_WAV = "data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAAC" +
+  "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
+
 // decodeAudioData via the callback form — works on every Safari that matters.
 function decodeBuffer(ctx, raw) {
   return new Promise((resolve, reject) => {
@@ -35,15 +40,35 @@ export class AudioMan {
     this._ambientQuietAt = -1;   // ctx time when target hit ~0 (for deferred stop)
 
     this._lastStepAt = -Infinity;
+    this._unlockEl = null;       // looping silent <audio> that promotes the iOS
+                                 // audio session to "playback" (silent-switch fix)
 
     // iOS: the context gets suspended/"interrupted" when the tab hides or a call
     // comes in — nudge it back when we become visible again.
     this._onVisibility = () => {
-      if (document.visibilityState === "visible" && this.ctx && this.ctx.state !== "running") {
-        try { this.ctx.resume().catch(() => {}); } catch (err) { /* ignore */ }
+      if (document.visibilityState === "visible") {
+        if (this.ctx && this.ctx.state !== "running") {
+          try { this.ctx.resume().catch(() => {}); } catch (err) { /* ignore */ }
+        }
+        if (this._unlockEl && this._unlockEl.paused) this._unlockEl.play().catch(() => {});
       }
     };
     document.addEventListener("visibilitychange", this._onVisibility);
+
+    // iOS can leave the context "interrupted" after calls/Siri WITHOUT a visibility
+    // change, and refuses programmatic resume outside user activation — so nudge it
+    // from real gestures (capture phase still fires under canvas pointer capture).
+    this._onGesture = () => {
+      if (this.ctx && this.ctx.state !== "running") {
+        try { this.ctx.resume().catch(() => {}); } catch (err) { /* ignore */ }
+      }
+      if (this._unlockEl && this._unlockEl.paused && document.visibilityState === "visible") {
+        this._unlockEl.play().catch(() => {});
+      }
+    };
+    window.addEventListener("pointerdown", this._onGesture, { capture: true, passive: true });
+    window.addEventListener("pointerup", this._onGesture, { capture: true, passive: true });
+    window.addEventListener("keydown", this._onGesture, { capture: true, passive: true });
   }
 
   get muted() { return this._muted; }
@@ -86,6 +111,21 @@ export class AudioMan {
 
   // Call from the first user gesture (and any later one — it's idempotent).
   unlock() {
+    // The iPhone hardware silent switch mutes the default "ambient" Web Audio
+    // session entirely. Promote the session to "playback": modern API on iOS 17+,
+    // a hidden looping silent <audio> element for older devices.
+    try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (err) { /* ignore */ }
+    if (!navigator.audioSession && !this._unlockEl) {
+      try {
+        const el = document.createElement("audio");
+        el.src = SILENT_WAV;
+        el.loop = true;
+        el.playsInline = true;
+        el.setAttribute("playsinline", "");
+        el.play().catch(() => {});
+        this._unlockEl = el;
+      } catch (err) { this._unlockEl = null; }
+    }
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;

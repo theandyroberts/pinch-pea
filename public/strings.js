@@ -46,7 +46,10 @@ export const STR = {
     cheer: "Yaaay! You did it!",
     idle1: "What should we make next?",
     idle2: "I like the purple hills best.",
-    idle3: "Your backpack looks heavy, Peathan!"
+    idle3: "Your backpack looks heavy, Peathan!",
+    almostClouds: "Higher! Almost at the clouds!",
+    flowerTip: "Pinch the little flowers in the meadow!",
+    rescue: "Hup! Up you go, Peathan!"
   },
 
   blocks: {
@@ -59,8 +62,13 @@ export const STR = {
   toastSaved: "World saved!",
   toastPocketFull: "Pocket full of that clay!",
   toastNoClay: "No more of that clay — pinch some up!",
+  toastNoFlowers: "Pinch the little flowers in the meadow!",
   toastUnlock: (name) => `New clay unlocked: ${name}!`,
   toastPhoto: "Snapshot saved to your pictures!",
+  toastPhotoDownload: "Snapshot downloaded!",
+  toastTooFar: "Walk a little closer!",
+  toastOnYou: "That spot is where YOU are standing!",
+  rotateCard: "Turn your phone tall to play!",
 
   devOverlay: "dev",
   pausedHint: "Paused — come back soon!"

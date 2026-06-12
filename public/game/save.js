@@ -66,12 +66,18 @@ export class SaveGame {
   // getState() returns the snapshot minus edits (main provides).
   attach(getState) { this._getState = getState; }
 
-  // Called once per sim tick. Allocation-free; autosaves only when dirty.
+  // Called once per sim tick. Allocation-free; autosaves only when dirty —
+  // and from an idle callback, not the sim frame, so the JSON.stringify of a
+  // long-lived edit set never hitches the game right while the kid is building.
   tick(dt) {
     this._timer += dt;
     if (this._timer < CFG.saveInterval) return;
     this._timer = 0;
-    if (this._dirty) this.saveNow();
+    if (!this._dirty || this._pendingIdle) return;
+    this._pendingIdle = true;
+    const run = () => { this._pendingIdle = false; if (this._dirty) this.saveNow(); };
+    if (window.requestIdleCallback) requestIdleCallback(run, { timeout: 2000 });
+    else setTimeout(run, 250);     // iOS < 18 has no requestIdleCallback
   }
 
   saveNow() {

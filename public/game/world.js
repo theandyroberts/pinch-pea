@@ -19,6 +19,12 @@ const FACES = [
 ];
 const AO_CURVE = [0.45, 0.62, 0.8, 1.0];
 
+// module-level scratch build buffers — remeshChunk is synchronous and non-reentrant,
+// so reusing these avoids ~300KB of array garbage per remesh
+const SP = [], SN = [], SU = [], SC = [], SI = [];
+const WP = [], WN = [], WU = [], WC = [], WI = [];
+const REMESH_MS_BUDGET = 3;
+
 export class World {
   constructor(scene, atlasTexture) {
     this.scene = scene;
@@ -60,6 +66,10 @@ export class World {
     if (x % CS === CS - 1) this.markDirty(x + 1, z);
     if (z % CS === 0) this.markDirty(x, z - 1);
     if (z % CS === CS - 1) this.markDirty(x, z + 1);
+    // corner edits change the DIAGONAL chunk's baked corner-AO term too
+    const bx = (x % CS === 0) ? -1 : (x % CS === CS - 1) ? 1 : 0;
+    const bz = (z % CS === 0) ? -1 : (z % CS === CS - 1) ? 1 : 0;
+    if (bx !== 0 && bz !== 0) this.markDirty(x + bx, z + bz);
     if (this.onEdit && !opts.silent) this.onEdit(x, y, z, id, old);
     return true;
   }
@@ -77,11 +87,13 @@ export class World {
     }
   }
 
-  // returns ms spent; processes up to n chunks per call
+  // returns ms spent; always remeshes ≥1 chunk, then keeps draining within a
+  // time budget so corner edits (3 dirty chunks) never spike a single frame
   processRemesh(n = CFG.remeshPerFrame) {
     const t0 = performance.now();
     let done = 0;
-    while (this.queue.length && done < n) {
+    while (this.queue.length &&
+           (done === 0 || (done < n && performance.now() - t0 < REMESH_MS_BUDGET))) {
       const key = this.queue.shift();
       this.dirty.delete(key);
       const [cx, cz] = key.split(",").map(Number);
@@ -101,8 +113,10 @@ export class World {
 
   remeshChunk(cx, cz) {
     const x0 = cx * CS, z0 = cz * CS;
-    const sp = [], sn = [], su = [], sc = [], si = [];   // solid buffers
-    const wp = [], wn = [], wu = [], wc = [], wi = [];   // water buffers
+    const sp = SP, sn = SN, su = SU, sc = SC, si = SI;   // solid buffers (scratch)
+    const wp = WP, wn = WN, wu = WU, wc = WC, wi = WI;   // water buffers (scratch)
+    sp.length = sn.length = su.length = sc.length = si.length = 0;
+    wp.length = wn.length = wu.length = wc.length = wi.length = 0;
 
     for (let y = 0; y < H; y++) for (let z = z0; z < z0 + CS; z++) for (let x = x0; x < x0 + CS; x++) {
       const id = this.get(x, y, z);
@@ -119,7 +133,7 @@ export class World {
       if (prev.solid) { this.scene.remove(prev.solid); prev.solid.geometry.dispose(); }
       if (prev.water) { this.scene.remove(prev.water); prev.water.geometry.dispose(); }
     }
-    const entry = { solid: null, water: null };
+    const entry = { solid: null, water: null, cx: x0 + CS / 2, cz: z0 + CS / 2 };
     if (si.length) {
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(sp, 3));
@@ -217,10 +231,11 @@ export class World {
     const uvc = [[u0, v0], [u0, v1], [u1, v1], [u1, v0]];
     for (const f of FACES) {
       const nx = x + f.d[0], ny = y + f.d[1], nz = z + f.d[2];
-      const nid = this.get(nx, ny, nz);
-      if (nid !== 0) continue;                             // only faces against air
+      const nd = BLOCKS[this.get(nx, ny, nz)];
+      if (nd.water || (nd.solid && !nd.partial)) continue; // faces against air + plants
       const base = P.length / 3;
-      const drop = f.d[1] === 1 ? 0.12 : 0;                // sunken water surface
+      // sunken surface; side faces meet it when no water sits above
+      const drop = (f.d[1] === 1 || !this.isWater(x, y + 1, z)) ? 0.12 : 0;
       for (let i = 0; i < 4; i++) {
         const c = f.c[i];
         P.push(x + c[0], y + c[1] - (c[1] ? drop : 0), z + c[2]);

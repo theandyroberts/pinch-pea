@@ -36,10 +36,12 @@ function toCount(v, max) {
 }
 
 export class Quests {
-  constructor({ world, homeSite, scene, hooks }) {
+  constructor({ world, homeSite, genHeight, scene, hooks }) {
     this.world = world;
     this.scene = scene;
     this.hooks = hooks || {};
+    this.genHeight = genHeight || null;   // pristine worldgen heights — keeps the blueprint
+                                          // anchored even after the kid builds on the pad
 
     const S = CFG.worldSize;
     const hx = (homeSite && typeof homeSite.x === "number") ? Math.floor(homeSite.x) : (S >> 1);
@@ -52,8 +54,10 @@ export class Quests {
     this.activeIndex = 0;
     this.flowerCount = 0;
     this.bridgeCount = 0;
+    this.towerBest = 0;              // sky_tower: highest placed block stood on
     this.playerPlaced = new Set();   // "x,y,z" keys, insertion-ordered for FIFO cap
     this._saidAllDone = false;
+    this._saidAlmost = false;
 
     // cozy_home ghost state
     this.ghost = null;
@@ -77,7 +81,8 @@ export class Quests {
 
   onBlockPlaced(x, y, z, id) {
     const def = BLOCKS[id];
-    if (def && def.solid) this._trackPlaced(x + "," + y + "," + z);
+    // flowers tracked too, so pinching WILD flowers never docks quest progress
+    if (def && (def.solid || id === B.FLOWER)) this._trackPlaced(x + "," + y + "," + z);
 
     const q = this.activeIndex;
     if (q === 0) {
@@ -103,37 +108,46 @@ export class Quests {
   }
 
   onBlockRemoved(x, y, z, id) {
-    this.playerPlaced.delete(x + "," + y + "," + z);
+    const wasPlaced = this.playerPlaced.delete(x + "," + y + "," + z);
 
     const q = this.activeIndex;
     if (q === 0) {
       if (this._reevalCell(x, y, z)) this._emitProgress();
-    } else if (q === 1 && id === B.FLOWER && this.flowerCount > 0) {
-      this.flowerCount--;                       // pinched a flower back up before done
+    } else if (q === 1 && id === B.FLOWER && wasPlaced && this.flowerCount > 0) {
+      this.flowerCount--;                       // pinched own planted flower back up
       this._emitProgress();
     }
   }
 
-  // sky_tower: main calls this ~2/s with the player's feet position
+  // sky_tower: main calls this ~2/s with the player's feet position.
+  // Progress = the highest player-placed block stood on, toward SKY_Y.
   checkStand(pos) {
     if (this.activeIndex !== 3 || !pos) return false;
-    const py = pos.y;
-    if (py < SKY_Y + 0.9) return false;         // can't be atop a y≥24 block yet
     // feet within 1.2 above the block top → block y in [py-2.2, py-0.9]
-    const byMax = Math.floor(py - 0.9);
-    const byMin = Math.ceil(py - 2.2);
+    const byMax = Math.floor(pos.y - 0.9);
+    const byMin = Math.max(1, Math.ceil(pos.y - 2.2));
     const bxMin = Math.floor(pos.x - 0.6), bxMax = Math.floor(pos.x + 0.6);
     const bzMin = Math.floor(pos.z - 0.6), bzMax = Math.floor(pos.z + 0.6);
     for (let by = byMax; by >= byMin; by--) {
-      if (by < SKY_Y) continue;
       for (let bz = bzMin; bz <= bzMax; bz++) {
         if (Math.abs(pos.z - (bz + 0.5)) > 0.6) continue;
         for (let bx = bxMin; bx <= bxMax; bx++) {
           if (Math.abs(pos.x - (bx + 0.5)) > 0.6) continue;
           if (!this.playerPlaced.has(bx + "," + by + "," + bz)) continue;
           if (!this.world.isSolid(bx, by, bz)) continue;
-          this._complete(pos.x, pos.y + 0.8, pos.z);
-          return true;
+          if (by > this.towerBest) {
+            this.towerBest = by;
+            this._emitProgress();
+            if (!this._saidAlmost && by >= SKY_Y - 6 && by < SKY_Y) {
+              this._saidAlmost = true;
+              this.hooks.say?.(STR.jaspea.almostClouds);
+            }
+          }
+          if (by >= SKY_Y) {
+            this._complete(pos.x, pos.y + 0.8, pos.z);
+            return true;
+          }
+          return false;
         }
       }
     }
@@ -162,6 +176,7 @@ export class Quests {
       active: this.activeIndex,
       flowers: this.flowerCount,
       bridge: this.bridgeCount,
+      tower: this.towerBest,
       placed: Array.from(this.playerPlaced)
     };
   }
@@ -172,6 +187,7 @@ export class Quests {
     const a = toCount(data.active, n);
     this.flowerCount = toCount(data.flowers, FLOWER_GOAL);
     this.bridgeCount = toCount(data.bridge, BRIDGE_GOAL);
+    this.towerBest = toCount(data.tower, SKY_Y);
     this.playerPlaced.clear();
     if (Array.isArray(data.placed)) {
       const start = Math.max(0, data.placed.length - PLACED_CAP);
@@ -231,6 +247,7 @@ export class Quests {
     if (i === 0) { total = this._cozyNeeded || 1; done = Math.min(this._cozyDone, total); }
     else if (i === 1) { total = FLOWER_GOAL; done = Math.min(this.flowerCount, total); }
     else if (i === 2) { total = BRIDGE_GOAL; done = Math.min(this.bridgeCount, total); }
+    else if (i === 3) { total = SKY_Y; done = Math.min(this.towerBest, total); }
     return { id, name: STR.quests[id].name, done, total };
   }
 
@@ -284,11 +301,14 @@ export class Quests {
 
   _buildBlueprint() {
     const x0 = this.homeSite.x, z0 = this.homeSite.z;
-    // rest the blueprint on the highest ground under the pad so it never sinks
+    // rest the blueprint on the highest PRISTINE ground under the pad: worldgen heights
+    // are deterministic, so the blueprint can never drift when the kid builds on it
     let y0 = 1;
     for (let dz = 0; dz < HOME_D; dz++) {
       for (let dx = 0; dx < HOME_W; dx++) {
-        const t = this.world.topSolidY(x0 + dx, z0 + dz);
+        const t = this.genHeight
+          ? this.genHeight[(z0 + dz) * CFG.worldSize + (x0 + dx)]
+          : this.world.topSolidY(x0 + dx, z0 + dz);
         if (t > y0) y0 = t;
       }
     }

@@ -33,15 +33,33 @@ export class FollowCam {
     const cp = Math.cos(this.pitch), spt = Math.sin(this.pitch);
     this._dir.set(Math.sin(this.yaw) * cp, spt, Math.cos(this.yaw) * cp);
 
-    // shrink distance if a voxel blocks the view line
-    let d = this.dist;
-    const hit = world.castRay(this._target, this._dir, this.dist);
-    if (hit) d = Math.max(CFG.camMin * 0.4, hit.dist - 0.4);
-
-    this._desired.copy(this._target).addScaledVector(this._dir, d);
+    // smooth toward the UNCLIPPED desired position…
+    this._desired.copy(this._target).addScaledVector(this._dir, this.dist);
     if (this._first) { this._smoothed.copy(this._desired); this._first = false; }
     const k = 1 - Math.pow(0.0001, dt);   // framerate-independent smoothing
     this._smoothed.lerp(this._desired, k);
+
+    // …then collide AFTER smoothing: clamp onto the actual focus→camera ray, so the
+    // rendered camera can never spend lerp frames inside a wall
+    this._dir.copy(this._smoothed).sub(this._target);
+    const len = this._dir.length();
+    if (len > 1e-6) {
+      this._dir.multiplyScalar(1 / len);            // DDA needs a unit direction
+      const hit = world.castRay(this._target, this._dir, len);
+      if (hit) {
+        const d = Math.max(CFG.camMin * 0.4, hit.dist - 0.4);
+        this._smoothed.copy(this._target).addScaledVector(this._dir, d);
+      }
+    }
+
+    // keep the lens just above the water surface (castRay ignores water)
+    const cx = Math.floor(this._smoothed.x), cz = Math.floor(this._smoothed.z);
+    let cy = Math.floor(this._smoothed.y);
+    if (world.isWater(cx, cy, cz)) {
+      while (world.isWater(cx, cy, cz)) cy++;
+      this._smoothed.y = Math.max(this._smoothed.y, cy - 0.07);
+    }
+
     this.cam.position.copy(this._smoothed);
     this.cam.lookAt(this._target);
   }

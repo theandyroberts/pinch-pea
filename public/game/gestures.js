@@ -55,6 +55,10 @@ export class HandMagic {
     this._walking = false;     // committed palm-walk state
     this._overlayInk = false;  // dots currently drawn on the preview canvas
     this._warned = false;
+    this._lastFrameAt = 0;     // camera-stall watchdog
+    this._skip = 1;            // adaptive inference cadence (frames)
+    this._cadence = CFG.gestureEveryNFrames;
+    this._costEma = 8;         // assume ~8ms until measured
   }
 
   get running() { return this._running; }
@@ -66,11 +70,22 @@ export class HandMagic {
       const { FilesetResolver, HandLandmarker } =
         await import("../vendor/mediapipe/vision_bundle.mjs");
       const fileset = await FilesetResolver.forVisionTasks("./vendor/mediapipe/wasm");
-      this._landmarker = await HandLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: "./vendor/mediapipe/hand_landmarker.task" },
-        runningMode: "VIDEO",
-        numHands: 1
-      });
+      // GPU delegate first (WebGL2) — CPU inference costs 10-30ms/frame on older
+      // iPhones, which would drag the whole game down while hand magic is on
+      try {
+        this._landmarker = await HandLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: "./vendor/mediapipe/hand_landmarker.task", delegate: "GPU" },
+          runningMode: "VIDEO",
+          numHands: 1
+        });
+      } catch (gpuErr) {
+        console.warn("HandMagic: GPU delegate unavailable, using CPU —", gpuErr);
+        this._landmarker = await HandLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: "./vendor/mediapipe/hand_landmarker.task" },
+          runningMode: "VIDEO",
+          numHands: 1
+        });
+      }
 
       this._stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: 320, height: 240 }
@@ -105,8 +120,17 @@ export class HandMagic {
       this._canvas = canvas;
       this._ctx = canvas.getContext("2d");
 
+      // iOS stops camera tracks on lock/calls/app-switch, often without recovery —
+      // listen for the hard stop, and let the update() watchdog catch silent stalls
+      const track = this._stream.getVideoTracks()[0];
+      if (track) {
+        this._trackEnded = () => this._onCameraLost();
+        track.addEventListener("ended", this._trackEnded);
+      }
+
       this._lastVideoTime = -1;
       this._lastTs = 0;
+      this._lastFrameAt = performance.now();
       this._running = true;
       this._cb.onStatus?.(STR.handMagicReady);
     } catch (err) {
@@ -119,25 +143,41 @@ export class HandMagic {
     }
   }
 
-  update(frameCounter) {
+  update() {
     if (!this._running) return;
-    if (frameCounter % CFG.gestureEveryNFrames !== 0) return;
+    // adaptive cadence: an internal countdown (a varying modulo against a global
+    // counter aliases), tuned so inference costs ~4ms amortized per 60Hz frame
+    if (--this._skip > 0) return;
+    this._skip = this._cadence;
     const video = this._video;
-    if (!video || video.readyState < 2) return;
-    if (video.currentTime === this._lastVideoTime) return;   // no new camera frame
+    // watchdog: no fresh camera frame for 2s while visible → the camera died
+    // (lock screen, call, another app) — shut down honestly instead of freezing
+    const wallNow = performance.now();
+    const stale = !video || video.readyState < 2 || video.currentTime === this._lastVideoTime;
+    if (stale) {
+      if (document.visibilityState === "visible" && wallNow - this._lastFrameAt > 2000) {
+        this._onCameraLost();
+      }
+      return;
+    }
     this._lastVideoTime = video.currentTime;
+    this._lastFrameAt = wallNow;
 
     let ts = performance.now();
     if (ts <= this._lastTs) ts = this._lastTs + 1;           // must be monotonic
     this._lastTs = ts;
 
     let result;
+    const t0 = performance.now();
     try {
       result = this._landmarker.detectForVideo(video, ts);
     } catch (err) {
       if (!this._warned) { this._warned = true; console.warn("HandMagic: detect failed —", err); }
       return;
     }
+    const cost = performance.now() - t0;
+    this._costEma = this._costEma * 0.8 + cost * 0.2;
+    this._cadence = Math.max(2, Math.min(8, Math.ceil(this._costEma / 4)));
 
     const hands = result.landmarks;
     if (hands && hands.length > 0) this._onHand(hands[0], ts);
@@ -150,6 +190,15 @@ export class HandMagic {
     this._resetGestureState();
     if (wasPinching) this._cb.onPinchEnd?.();
     this._cb.onPalm?.(false);
+  }
+
+  // camera vanished mid-session: stop cleanly, THEN report (stop's onPalm(false)
+  // clears the status chip, so the message must come after)
+  _onCameraLost() {
+    if (!this._running) return;
+    this.stop();
+    this._cb.onStatus?.(STR.handMagicError);
+    this._cb.onStopped?.();
   }
 
   // ---------- internals ----------

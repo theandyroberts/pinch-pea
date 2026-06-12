@@ -198,11 +198,12 @@ export class Jaspea {
   }
 
   // Look up STR.jaspea[key]; at most one line per 6s — busy means the line is dropped.
+  // force=true bypasses the cooldown (scripted tutorial lines must never vanish).
   // Returns true if the line was actually spoken.
-  sayKey(key) {
+  sayKey(key, force = false) {
     const text = STR.jaspea[key];
     if (!text) return false;
-    if (this._clock - this._lastSayAt < SAY_COOLDOWN) return false;
+    if (!force && this._clock - this._lastSayAt < SAY_COOLDOWN) return false;
     this._lastSayAt = this._clock;
     this._idleTimer = 0;                     // any spoken line resets the idle pacing
     if (this.onSay) this.onSay(text);

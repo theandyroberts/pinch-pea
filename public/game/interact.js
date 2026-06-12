@@ -2,6 +2,7 @@ import * as THREE from "../vendor/three.module.js";
 import { B, BLOCKS, byKey } from "./blocks.js";
 import { CFG } from "./config.js";
 import { collides } from "./physics.js";
+import { STR } from "../strings.js";
 
 // The hero verb: PINCH (harvest) and PLACE (build), plus growing things.
 // Taps arrive in canvas pixels; gestures and gamepad reuse the same path.
@@ -10,6 +11,9 @@ export class Interact {
     Object.assign(this, { world, scene, camera, player, jaspea, inventory, particles, audio, quests, ui });
     this.mode = "pinch";                       // "pinch" | "build"
     this.growing = [];                          // {x,y,z,id,t}
+    this._refuseAt = 0;                         // refusal-feedback rate limiter
+    this._flashT = 0;                           // highlight flash timer (s)
+    this._farTaps = 0; this._farTapAt = 0;      // consecutive too-far taps
 
     const box = new THREE.BoxGeometry(1.04, 1.04, 1.04);
     const edges = new THREE.EdgesGeometry(box);
@@ -51,7 +55,23 @@ export class Interact {
     return hit;
   }
 
+  // a tap that can't work still answers: a brief shaky flash + a soft squish "nuh-uh"
+  _refuse(hit, toastKey) {
+    const now = performance.now();
+    if (now - this._refuseAt < 700) return;
+    this._refuseAt = now;
+    if (hit) {
+      this.highlight.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+      this.highlight.material.color.setHex(0xff9b9b);
+      this.highlight.visible = true;
+      this._flashT = 0.4;
+    }
+    this.audio.play("pinch", { rate: 0.6, volume: 0.5 });
+    if (toastKey) this.ui?.toast?.(toastKey);
+  }
+
   updateHover(px, py) {
+    if (this._flashT > 0) return;               // let a refusal flash play out
     if (px == null) { this.highlight.visible = false; return; }
     const hit = this._hit(px, py);
     if (!hit || hit.tooFar) { this.highlight.visible = false; return; }
@@ -68,7 +88,15 @@ export class Interact {
     if (this.jaspea && this._tapJaspea(px, py)) return;
     const mode = altMode ? (this.mode === "pinch" ? "build" : "pinch") : this.mode;
     const hit = this._hit(px, py);
-    if (!hit || hit.tooFar) return;
+    if (!hit) return;                            // sky taps stay silent — expected
+    if (hit.tooFar) {
+      const now = performance.now();
+      this._farTaps = (now - this._farTapAt < 4000) ? this._farTaps + 1 : 1;
+      this._farTapAt = now;
+      this._refuse(hit, this._farTaps >= 3 ? STR.toastTooFar : null);
+      if (this._farTaps >= 3) this._farTaps = 0;
+      return;
+    }
     if (mode === "pinch") this._pinch(hit);
     else this._place(hit);
   }
@@ -110,8 +138,16 @@ export class Interact {
     const key = this.inventory.selected;
     if (!this.inventory.has(key)) { this.ui?.toastNoClay?.(key); return; }
     const id = byKey[key].id;
-    // never trap the heroes inside clay
-    if (byKey[key].solid && (this._insideBody(this.player.body, x, y, z) || this._insideJaspea(x, y, z))) return;
+    // never trap the heroes inside clay — and SAY so instead of ignoring the tap
+    if (byKey[key].solid && this._insideJaspea(x, y, z)) {
+      this.jaspea.squeeze();
+      this._refuse(null);
+      return;
+    }
+    if (byKey[key].solid && this._insideBody(this.player.body, x, y, z)) {
+      this._refuse(hit, STR.toastOnYou);
+      return;
+    }
     this.inventory.consume(key, 1);
     this.world.set(x, y, z, id);
     if (id === B.SAPLING) this.growing.push({ x, y, z, id, t: CFG.growTimeS });
@@ -138,6 +174,13 @@ export class Interact {
   }
 
   tick(dt) {
+    if (this._flashT > 0) {
+      this._flashT -= dt;
+      if (this._flashT <= 0) {
+        this.highlight.material.color.setHex(0xffffff);
+        this.highlight.visible = false;
+      }
+    }
     for (const g of this.growing) {
       g.t -= dt;
       if (g.t > 0 && Math.random() < dt * 0.6) {
@@ -153,9 +196,29 @@ export class Interact {
 
   _growTree(g) {
     if (this.world.get(g.x, g.y, g.z) !== B.SAPLING) return;
-    const trunkH = 3;
-    for (let i = 0; i < trunkH; i++) this.world.set(g.x, g.y + i, g.z, B.WOOD, { silent: false });
-    const ty = g.y + trunkH;
+    const trunkH = 3, ty = g.y + trunkH;
+    // every cell about to turn solid; if a hero is inside any of them, wait politely
+    const cells = [];
+    for (let i = 0; i < trunkH; i++) cells.push([g.x, g.y + i, g.z]);
+    for (let dy = 0; dy <= 2; dy++) for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      if (dy === 2 && (dx !== 0 || dz !== 0)) continue;
+      if (dy === 0 && Math.abs(dx) + Math.abs(dz) === 2) continue;
+      if (this.world.get(g.x + dx, ty + dy, g.z + dz) === B.AIR) cells.push([g.x + dx, ty + dy, g.z + dz]);
+    }
+    for (const [x, y, z] of cells) {
+      if (this._insideBody(this.player.body, x, y, z) || this._insideJaspea(x, y, z)) {
+        g.t = 0.75;                 // re-queue: grow once the heroes step aside
+        this.growing.push(g);
+        return;
+      }
+    }
+    // trunk never overwrites the kid's own builds — only the sapling cell and open air
+    for (let i = 0; i < trunkH; i++) {
+      const cur = this.world.get(g.x, g.y + i, g.z);
+      if (i === 0 || cur === B.AIR || cur === B.WATER) {
+        this.world.set(g.x, g.y + i, g.z, B.WOOD);
+      }
+    }
     for (let dy = 0; dy <= 2; dy++) for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       if (dy === 2 && (dx !== 0 || dz !== 0)) continue;
       if (dy === 0 && Math.abs(dx) + Math.abs(dz) === 2) continue;

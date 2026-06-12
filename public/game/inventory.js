@@ -7,7 +7,7 @@ export class Inventory {
     for (const k of PALETTE_ORDER) this.counts[k] = 0;
     for (const [k, n] of Object.entries(CFG.startInventory)) this.counts[k] = n;
     this.counts.sapling = 3;
-    this.counts.flower = 4;
+    this.counts.flower = 5;   // matches the flower-garden quest goal exactly
     this.selected = "cream";
     this.onChange = null;
   }

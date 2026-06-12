@@ -295,6 +295,17 @@ export class UI {
     E.paused = el("div", "pp-paused", this.root);
     const pcard = el("div", "pp-paused-card", E.paused);
     pcard.textContent = S.pausedHint ?? "";
+    // iOS sometimes never refires window focus after system overlays — a tap on
+    // the veil itself must always be able to resume the game
+    E.paused.addEventListener("pointerdown", (e) => {
+      if (e.cancelable) e.preventDefault();
+      this.hooks.onResume?.();
+    });
+
+    // --- landscape rotate card (CSS-driven; sim pauses via main's matchMedia) ---
+    const rot = el("div", "pp-rotate", this.root);
+    const rcard = el("div", "pp-paused-card", rot);
+    rcard.textContent = S.rotateCard ?? "";
 
     // --- loading / start overlay (topmost) --------------------------------------
     const ov = el("div", "pp-overlay", this.root);
@@ -608,25 +619,26 @@ export class UI {
     this._mmDirty = true;
   }
 
-  // called every frame by main — skips repaint unless something moved
+  // called every frame by main — repaints at most ~10Hz, and only when something
+  // moved (time-based throttle: frame counting would halve on 120Hz ProMotion)
   updateMinimap(x, z, yaw) {
     const c = this._mmCtx;
     if (!c) return;
+    const now = performance.now();
     if (!this._mmDirty) {
+      if (now - (this._mmPaintAt || 0) < 100) return;
       const dx = x - this._mmLX, dz = z - this._mmLZ;
       let dy = yaw - this._mmLYaw;
       if (dy < 0) dy = -dy;
       if (dx * dx + dz * dz < 0.02 && dy < 0.02) return;
     }
     this._mmDirty = false;
+    this._mmPaintAt = now;
     this._mmLX = x; this._mmLZ = z; this._mmLYaw = yaw;
 
-    const S = this._mmS, R = MM_D / 2;
+    const S = this._mmS;
+    // no clip() needed: the canvas itself is border-radius:50% in CSS
     c.clearRect(0, 0, MM_D, MM_D);
-    c.save();
-    c.beginPath();
-    c.arc(R, R, R, 0, TAU);
-    c.clip();
     c.drawImage(this._mmOff, 0, 0, S, S, 0, 0, MM_D, MM_D);
 
     let px = x / S * MM_D, py = z / S * MM_D;
@@ -651,7 +663,6 @@ export class UI {
     c.arc(px, py, 4.2, 0, TAU);
     c.fill();
     c.stroke();
-    c.restore();
   }
 
   // ======================================================================
@@ -696,7 +707,9 @@ export class UI {
     setTimeout(() => { if (t.parentNode) t.remove(); }, TOAST_MS + 600); // safety
   }
 
-  toastNoClay(/* key */) {
+  toastNoClay(key) {
+    // flowers grow wild in the meadow — point the kid there instead of a dead end
+    if (key === "flower" && this.str.toastNoFlowers) return this.toast(this.str.toastNoFlowers);
     this.toast(this.str.toastNoClay ?? "");
   }
 
@@ -1002,9 +1015,17 @@ const CSS = `
 /* ---- paused veil ----------------------------------------------------------------------------------------------- */
 .pp-paused { position: absolute; inset: 0; z-index: 80; display: none;
   align-items: center; justify-content: center; background: rgba(246,239,226,.7); }
-.pp-paused.show { display: flex; }
+.pp-paused.show { display: flex; pointer-events: auto; }
 .pp-paused-card { background: var(--cream); border-radius: 20px;
   padding: 16px 28px; font-size: 16px; font-weight: 800; box-shadow: var(--shadow); }
+
+/* ---- landscape rotate card (kids rotate phones constantly) ------------------------------------------------------ */
+.pp-rotate { position: absolute; inset: 0; z-index: 85; display: none;
+  align-items: center; justify-content: center; background: rgba(246,239,226,.92);
+  pointer-events: auto; }
+@media (orientation: landscape) and (max-height: 500px) {
+  .pp-rotate { display: flex; }
+}
 
 /* ---- loading / start overlay -------------------------------------------------------------------------------------- */
 .pp-overlay { position: absolute; inset: 0; z-index: 90; display: none;

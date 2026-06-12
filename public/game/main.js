@@ -58,6 +58,8 @@ function addSkyDome() {
     new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false, depthWrite: false })
   );
   dome.renderOrder = -10;
+  // centered on the WORLD, not the origin corner — the camera can never exit it
+  dome.position.set(CFG.worldSize / 2, 0, CFG.worldSize / 2);
   return dome;
 }
 
@@ -114,7 +116,7 @@ async function boot() {
   const followCam = new FollowCam(camera);
 
   const quests = new Quests({
-    world, homeSite: gen.homeSite, scene,
+    world, homeSite: gen.homeSite, genHeight: gen.height, scene,
     hooks: {
       onProgress: (q, done, total) => ui.setQuest(q.name, done, total),
       onComplete: (q) => {
@@ -174,12 +176,17 @@ async function boot() {
 
   // ---------- hand magic (camera gestures, lazy) ----------
   let handMagic = null, gestureCursor = null, gesturePinching = false, gestureBusy = false;
+  function gestureCleanup() {
+    handMagic = null; gestureCursor = null; gesturePinching = false;
+    player.gestureWalk = false;
+    ui.gestureActive(false);
+  }
   async function toggleHandMagic() {
     if (gestureBusy) return;
     if (handMagic?.running) {
-      handMagic.stop(); handMagic = null; gestureCursor = null;
-      player.gestureWalk = false;
-      ui.gestureActive(false); ui.gestureStatus("");
+      handMagic.stop();
+      gestureCleanup();
+      ui.gestureStatus("");
       return;
     }
     gestureBusy = true;
@@ -191,7 +198,8 @@ async function boot() {
         onPinchStart: (px, py) => { gesturePinching = true; interact.tapAt(px, py, false); ui.gestureCursor(px, py, true); },
         onPinchEnd: () => { gesturePinching = false; },
         onPalm: (walking) => { player.gestureWalk = walking; ui.gestureStatus(walking ? STR.handMagicWalk : ""); },
-        onStatus: (t) => ui.gestureStatus(t)
+        onStatus: (t) => ui.gestureStatus(t),
+        onStopped: () => gestureCleanup()    // camera died mid-session (lock/call)
       });
       await handMagic.start(ui.gesturePreviewContainer());
       ui.gestureActive(!!handMagic.running);
@@ -205,16 +213,30 @@ async function boot() {
   }
 
   function takePhoto() {
+    // everything synchronous inside the tap gesture: iOS share sheets require it
     renderer.render(scene, camera);
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "pinchy-pea.png";
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      ui.toast(STR.toastPhoto);
-    });
+    try {
+      const dataUrl = canvas.toDataURL("image/png");
+      const bin = atob(dataUrl.split(",")[1]);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const file = new File([bytes], "pinchy-pea.png", { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file] })
+          .then(() => ui.toast(STR.toastPhoto))
+          .catch((e) => { if (e && e.name !== "AbortError") downloadPhoto(file); });
+        return;
+      }
+      downloadPhoto(file);
+    } catch (e) { console.warn("photo failed", e); }
+  }
+  function downloadPhoto(file) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(file);
+    a.download = "pinchy-pea.png";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    ui.toast(STR.toastPhotoDownload);
   }
 
   // ---------- fixed-timestep loop ----------
@@ -222,13 +244,96 @@ async function boot() {
   let acc = 0, last = performance.now(), paused = false;
   let frames = 0, fpsAt = last, fps = 0, frameCounter = 0;
   let simTime = 0, standCheckT = 0, ambientT = 0;
+  const _cullFwd = new THREE.Vector3();
 
+  const landscapeMq = matchMedia("(orientation: landscape) and (max-height: 500px)");
+  const resume = () => {
+    if (document.hidden || landscapeMq.matches) return;
+    paused = false; last = performance.now(); ui.setPaused(false);
+  };
   addEventListener("blur", () => { paused = true; ui.setPaused(true); });
-  addEventListener("focus", () => { paused = false; last = performance.now(); ui.setPaused(false); });
+  addEventListener("focus", resume);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) { paused = true; ui.setPaused(true); }
-    else { paused = false; last = performance.now(); ui.setPaused(false); }
+    else resume();
   });
+  // kids rotate phones constantly — the CSS rotate card shows itself; just pause
+  landscapeMq.addEventListener?.("change", () => {
+    if (landscapeMq.matches) paused = true;
+    else resume();
+  });
+  // iOS can drop the focus event after system overlays — the veil itself resumes
+  ui.hooks.onResume = resume;
+
+  // ---------- never stuck: rescue a kid from any pocket they can't escape ----------
+  // BFS over standable cells using the real movement rules (step/jump up 1, fall any
+  // depth). A closed region under 48 cells means movement alone can't get out.
+  let trapT = 0, trapCheckT = 0, flowerHintAt = -60;
+  const NEI4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const solidAt = (x, y, z) => world.isSolid(x, y, z);
+  const standable = (x, y, z) =>
+    y > 0 && y < CFG.worldHeight - 1 && solidAt(x, y - 1, z) && !solidAt(x, y, z) && !solidAt(x, y + 1, z);
+  // returns the trapped region's columns as a Set("x,z"), or null when free
+  function findTrapRegion() {
+    const b = player.body;
+    if (!b.onGround || b.inWater) return null;           // water always floats you out
+    const sx = Math.floor(b.pos.x), sy = Math.max(1, Math.round(b.pos.y)), sz = Math.floor(b.pos.z);
+    if (!standable(sx, sy, sz)) return null;
+    const seen = new Set([sx + "," + sy + "," + sz]);
+    const cols = new Set([sx + "," + sz]);
+    const queue = [[sx, sy, sz]];
+    while (queue.length) {
+      const [x, y, z] = queue.pop();
+      for (let i = 0; i < 4; i++) {
+        const nx = x + NEI4[i][0], nz = z + NEI4[i][1];
+        let land = -1;
+        if (!solidAt(x, y + 2, z) && standable(nx, y + 1, nz)) {
+          land = y + 1;                                  // step/jump up one
+        } else if (!solidAt(nx, y, nz) && !solidAt(nx, y + 1, nz)) {
+          let ny = y;                                    // walk over, fall to a floor
+          while (ny > 1 && !solidAt(nx, ny - 1, nz)) ny--;
+          if (standable(nx, ny, nz)) land = ny;
+        }
+        if (land < 0) continue;
+        const key = nx + "," + land + "," + nz;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        cols.add(nx + "," + nz);
+        if (seen.size >= 48) return null;                // open area — not a trap
+        queue.push([nx, land, nz]);
+      }
+    }
+    return cols;                                          // closed pocket
+  }
+  function rescue(region) {
+    const b = player.body;
+    const sx = Math.floor(b.pos.x), sz = Math.floor(b.pos.z);
+    // nearest open SURFACE column outside the trapped region (the player's own
+    // column top is usually still inside the hole they dug)
+    for (let r = 1; r <= 8; r++) {
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const x = sx + dx, z = sz + dz;
+        if (region.has(x + "," + z)) continue;
+        if (!world.inBounds(x, 1, z)) continue;
+        const ty = world.topSolidY(x, z) + 1;
+        if (ty <= CFG.seaLevel) continue;                // never drop them in the sea
+        if (!standable(x, ty, z)) continue;
+        return teleportTo(x + 0.5, ty, z + 0.5);
+      }
+    }
+    teleportTo(player.spawn.x, player.spawn.y, player.spawn.z);  // worst case: home
+  }
+  function teleportTo(x, y, z) {
+    const b = player.body;
+    b.pos.x = x; b.pos.y = y; b.pos.z = z;
+    b.vel.x = 0; b.vel.y = 0; b.vel.z = 0;
+    player._visualY = y;
+    particles.confetti(x, y + 1, z);
+    audio.play("cheer", { volume: 0.7 });
+    jaspea.sayKey("rescue", true);
+    trapT = 0;
+  }
 
   function simUpdate(dtMs) {
     const dt = dtMs / 1000;
@@ -248,7 +353,25 @@ async function boot() {
     save.tick(dt);
 
     standCheckT += dt;
-    if (standCheckT > 0.5) { standCheckT = 0; quests.checkStand(player.body.pos); }
+    if (standCheckT > 0.5) {
+      standCheckT = 0;
+      quests.checkStand(player.body.pos);
+      // flower quest with an empty flower pocket: point at the wild meadow flowers
+      const aq = quests.activeQuest();
+      if (aq?.id === "flower_garden" && (inventory.counts.flower | 0) === 0 &&
+          simTime - flowerHintAt > 30) {
+        flowerHintAt = simTime;
+        jaspea.sayKey("flowerTip");
+      }
+    }
+
+    trapCheckT += dt;
+    if (trapCheckT > 1) {
+      trapCheckT = 0;
+      const region = findTrapRegion();
+      if (region) { trapT += 1; if (trapT >= 5) rescue(region); }
+      else trapT = 0;
+    }
 
     ambientT += dt;
     if (ambientT > 0.5) {
@@ -284,6 +407,17 @@ async function boot() {
     interact.updateHover(hover?.x, hover?.y);
     handMagic?.update(frameCounter);
 
+    // skip chunks past the fog wall (view-depth cull — matches what fog hides)
+    camera.getWorldDirection(_cullFwd);
+    for (const e of world.meshes.values()) {
+      const depth = (e.cx - camera.position.x) * _cullFwd.x +
+                    (24 - camera.position.y) * _cullFwd.y +
+                    (e.cz - camera.position.z) * _cullFwd.z;
+      const vis = depth - 27 < CFG.fogFar;
+      if (e.solid) e.solid.visible = vis;
+      if (e.water) e.water.visible = vis;
+    }
+
     ui.setYaw(followCam.yaw);
     ui.updateMinimap(player.body.pos.x, player.body.pos.z, followCam.yaw);
 
@@ -305,9 +439,10 @@ async function boot() {
     audio.music("music");
     ui.hideOverlay();
     if (!data) {
-      jaspea.sayKey("hello");
-      setTimeout(() => jaspea.sayKey("pinchTip"), 5000);
-      setTimeout(() => jaspea.sayKey("buildTip"), 14000);
+      // forced: scripted tutorial lines must never lose to the ambient-chat cooldown
+      jaspea.sayKey("hello", true);
+      setTimeout(() => jaspea.sayKey("pinchTip", true), 5000);
+      setTimeout(() => jaspea.sayKey("buildTip", true), 14000);
     }
     const q = quests.activeQuest();
     if (q) ui.setQuest(q.name, q.done, q.total);

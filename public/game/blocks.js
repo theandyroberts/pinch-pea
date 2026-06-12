@@ -47,6 +47,53 @@ const TILE_FILES = [
 // fallback flat colors if a texture failed to land (manifest failure is reported, not hidden)
 const TILE_FALLBACK = [0x9ed98c, 0xd99a78, 0xf2e7d4, 0xb8b0c4, 0xa07a58, 0x86c66e, 0xeee0b8, 0xffffff];
 
+// hand-pressed clay: bake a pillow shade into each face — a crevice shadow at
+// the edges that reaches deepest into the corners, a seam crease at the block
+// border, and a soft squashy highlight in the belly. With the baked vertex AO
+// this makes every cube read as a rounded clay brick, no extra geometry.
+function pillowShade(src) {
+  const c = document.createElement("canvas");
+  c.width = TILE_PX; c.height = TILE_PX;
+  const x = c.getContext("2d");
+  x.drawImage(src, 0, 0, TILE_PX, TILE_PX);
+  const T = TILE_PX, half = T / 2;
+  x.globalCompositeOperation = "multiply";
+  let g = x.createRadialGradient(half, half, T * 0.30, half, half, T * 0.74);
+  g.addColorStop(0, "rgba(88,58,40,0)");
+  g.addColorStop(0.72, "rgba(88,58,40,0.10)");
+  g.addColorStop(1, "rgba(70,45,30,0.38)");
+  x.fillStyle = g;
+  x.fillRect(0, 0, T, T);
+  x.strokeStyle = "rgba(66,42,28,0.30)";       // the seam crease between blocks
+  x.lineWidth = 5;
+  x.strokeRect(1.5, 1.5, T - 3, T - 3);
+  x.globalCompositeOperation = "screen";
+  g = x.createRadialGradient(half, half * 0.92, 0, half, half, T * 0.46);
+  g.addColorStop(0, "rgba(255,250,240,0.10)");
+  g.addColorStop(1, "rgba(255,250,240,0)");
+  x.fillStyle = g;
+  x.fillRect(0, 0, T, T);
+  x.globalCompositeOperation = "source-over";
+  return c;
+}
+
+// each tile's content sits inside a PAD-wide edge-extended gutter so mipmaps
+// average a tile only with copies of its own edges, never the neighboring tile
+const PAD = 16;
+
+function drawTileWithGutters(ctx, img, cx, cy) {
+  const inner = TILE_PX - 2 * PAD, w = img.width, h = img.height;
+  ctx.drawImage(img, 0, 0, w, h, cx + PAD, cy + PAD, inner, inner);
+  ctx.drawImage(img, 0, 0, 1, h, cx, cy + PAD, PAD, inner);                 // left
+  ctx.drawImage(img, w - 1, 0, 1, h, cx + TILE_PX - PAD, cy + PAD, PAD, inner); // right
+  ctx.drawImage(img, 0, 0, w, 1, cx + PAD, cy, inner, PAD);                 // top
+  ctx.drawImage(img, 0, h - 1, w, 1, cx + PAD, cy + TILE_PX - PAD, inner, PAD); // bottom
+  ctx.drawImage(img, 0, 0, 1, 1, cx, cy, PAD, PAD);                         // corners
+  ctx.drawImage(img, w - 1, 0, 1, 1, cx + TILE_PX - PAD, cy, PAD, PAD);
+  ctx.drawImage(img, 0, h - 1, 1, 1, cx, cy + TILE_PX - PAD, PAD, PAD);
+  ctx.drawImage(img, w - 1, h - 1, 1, 1, cx + TILE_PX - PAD, cy + TILE_PX - PAD, PAD, PAD);
+}
+
 export async function buildAtlas() {
   const canvas = document.createElement("canvas");
   canvas.width = ATLAS_COLS * TILE_PX; canvas.height = ATLAS_ROWS * TILE_PX;
@@ -56,11 +103,15 @@ export async function buildAtlas() {
     const cx = (i % ATLAS_COLS) * TILE_PX, cy = Math.floor(i / ATLAS_COLS) * TILE_PX;
     if (!f) { ctx.fillStyle = "#fff"; ctx.fillRect(cx, cy, TILE_PX, TILE_PX); return res(); }
     const img = new Image();
-    img.onload = () => { ctx.drawImage(img, cx, cy, TILE_PX, TILE_PX); res(); };
+    img.onload = () => { drawTileWithGutters(ctx, pillowShade(img), cx, cy); res(); };
     img.onerror = () => {
       missing.push(f);
-      ctx.fillStyle = "#" + TILE_FALLBACK[i].toString(16).padStart(6, "0");
-      ctx.fillRect(cx, cy, TILE_PX, TILE_PX); res();
+      const flat = document.createElement("canvas");
+      flat.width = flat.height = TILE_PX;
+      const fx = flat.getContext("2d");
+      fx.fillStyle = "#" + TILE_FALLBACK[i].toString(16).padStart(6, "0");
+      fx.fillRect(0, 0, TILE_PX, TILE_PX);
+      drawTileWithGutters(ctx, pillowShade(flat), cx, cy); res();
     };
     img.src = "./assets/tex/" + f;
   })));
@@ -73,12 +124,14 @@ export async function buildAtlas() {
   return { texture, missing };
 }
 
-// UV rect for a tile slot, inset to avoid mip bleeding across atlas cells
-const INSET = 6 / (ATLAS_COLS * TILE_PX);
+// UV rect maps the tile's inner content (inside the gutters), with a small
+// per-axis sampling inset measured in that axis's texels
+const AW = ATLAS_COLS * TILE_PX, AH = ATLAS_ROWS * TILE_PX;
+const IN_PX = PAD + 3;
 export function uvRect(tile) {
   const c = tile % ATLAS_COLS, r = Math.floor(tile / ATLAS_COLS);
-  const u0 = c / ATLAS_COLS + INSET, u1 = (c + 1) / ATLAS_COLS - INSET;
+  const u0 = (c * TILE_PX + IN_PX) / AW, u1 = ((c + 1) * TILE_PX - IN_PX) / AW;
   // canvas y-down -> uv y-up
-  const v1 = 1 - r / ATLAS_ROWS - INSET, v0 = 1 - (r + 1) / ATLAS_ROWS + INSET;
+  const v1 = 1 - (r * TILE_PX + IN_PX) / AH, v0 = 1 - ((r + 1) * TILE_PX - IN_PX) / AH;
   return [u0, v0, u1, v1];
 }

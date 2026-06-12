@@ -151,7 +151,7 @@ async function boot() {
     onJump: (held) => input.setButton("jump", held),
     onModeToggle: () => interact.toggleMode(),
     onSelect: (key) => { inventory.select(key); if (interact.mode !== "build") interact.setMode("build"); },
-    onMuteMusic: () => audio.toggleMusicMute(),
+    onMusicCycle: () => audio.cycleMusicLevel(),
     onMuteSfx: () => audio.toggleSfxMute(),
     onHandMagic: () => toggleHandMagic(),
     onPhoto: () => takePhoto()
@@ -172,7 +172,7 @@ async function boot() {
     growing: interact.serialize().growing,
     player: { x: player.body.pos.x, y: player.body.pos.y, z: player.body.pos.z },
     jaspea: jaspea.position ? { ...jaspea.position } : null,
-    settings: { musicMuted: audio.musicMuted, sfxMuted: audio.sfxMuted }
+    settings: { musicLevel: audio.musicLevel, sfxMuted: audio.sfxMuted }
   }));
 
   // ---------- hand magic (camera gestures, lazy) ----------
@@ -438,9 +438,10 @@ async function boot() {
     audio.unlock();
     const st = data?.settings;
     if (st) {
-      audio.setMusicMuted(!!(st.musicMuted ?? st.muted));   // ?? st.muted: legacy saves
+      // musicLevel in new saves; older saves carried bools
+      audio.setMusicLevel(st.musicLevel ?? ((st.musicMuted ?? st.muted) ? 2 : 0));
       audio.setSfxMuted(!!(st.sfxMuted ?? st.muted));
-      ui.syncMute(audio.musicMuted, audio.sfxMuted);
+      ui.syncMute(audio.musicLevel, audio.sfxMuted);
     }
     audio.music("music");
     ui.hideOverlay();

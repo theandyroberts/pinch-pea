@@ -61,6 +61,9 @@ export const STR = {
     blossomleaf: "Petal"
   },
 
+  toastMusicOn: "Music: on",
+  toastMusicLow: "Music: soft",
+  toastMusicOff: "Music: off",
   toastSaved: "World saved!",
   toastPocketFull: "Pocket full of that clay!",
   toastNoClay: "No more of that clay — pinch some up!",

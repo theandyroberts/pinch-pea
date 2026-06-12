@@ -13,7 +13,8 @@ import { BLOCKS, byKey, PALETTE_ORDER } from "./blocks.js";
 const TAU = Math.PI * 2;
 const STYLE_ID = "pp-ui-style";
 const MUTE_LS_KEY = "pinchy-pea-muted";          // legacy (read once for migration)
-const MUSIC_LS_KEY = "pinchy-pea-muted-music";   // mirror audio.js persistence
+const MUSIC_LS_KEY = "pinchy-pea-muted-music";   // legacy music bool
+const MUSIC_LVL_KEY = "pinchy-pea-music-level";  // 0 normal · 1 low · 2 mute
 const SFX_LS_KEY = "pinchy-pea-muted-sfx";
 
 // Icon glyphs (contract-specified; labels for a11y come from STR).
@@ -126,11 +127,13 @@ export class UI {
     this._mmLX = 1e9; this._mmLZ = 1e9; this._mmLYaw = 1e9;
 
     // persisted mute state for the speaker icon (audio.js owns the truth)
-    this._mutedMusic = false;
+    this._musicLevel = 0;
     this._mutedSfx = false;
     try {
       const legacy = localStorage.getItem(MUTE_LS_KEY) === "1";
-      this._mutedMusic = legacy || localStorage.getItem(MUSIC_LS_KEY) === "1";
+      const lvl = localStorage.getItem(MUSIC_LVL_KEY);
+      if (lvl !== null) this._musicLevel = Math.min(2, Math.max(0, lvl | 0));
+      else if (legacy || localStorage.getItem(MUSIC_LS_KEY) === "1") this._musicLevel = 2;
       this._mutedSfx = legacy || localStorage.getItem(SFX_LS_KEY) === "1";
     } catch (e) { /* private mode */ }
 
@@ -174,9 +177,11 @@ export class UI {
     // --- small icon row (top-right): music / sounds / hand magic / photo ----
     const row = el("div", "pp-iconrow", this.root);
     E.musicBtn = this._iconButton(row, ICO.music, S.btnMusic, () => {
-      const r = this.hooks.onMuteMusic ? this.hooks.onMuteMusic() : !this._mutedMusic;
-      this._mutedMusic = typeof r === "boolean" ? r : !this._mutedMusic;
+      const r = this.hooks.onMusicCycle ? this.hooks.onMusicCycle() : (this._musicLevel + 1) % 3;
+      this._musicLevel = typeof r === "number" ? r : (this._musicLevel + 1) % 3;
       this._paintMute();
+      const t = [S.toastMusicOn, S.toastMusicLow, S.toastMusicOff][this._musicLevel];
+      if (t) this.toast(t);
     });
     E.musicIco = E.musicBtn.firstChild;
     E.sfxBtn = this._iconButton(row, this._mutedSfx ? ICO.soundOff : ICO.sound, S.btnSfx, () => {
@@ -186,8 +191,9 @@ export class UI {
     });
     E.sfxIco = E.sfxBtn.firstChild;
     this._paintMute = () => {
-      E.musicBtn.classList.toggle("pp-off", this._mutedMusic);
-      E.musicBtn.setAttribute("aria-pressed", this._mutedMusic ? "true" : "false");
+      E.musicBtn.classList.toggle("pp-low", this._musicLevel === 1);
+      E.musicBtn.classList.toggle("pp-off", this._musicLevel === 2);
+      E.musicBtn.setAttribute("aria-pressed", this._musicLevel === 2 ? "true" : "false");
       E.sfxIco.textContent = this._mutedSfx ? ICO.soundOff : ICO.sound;
       E.sfxBtn.classList.toggle("pp-off", this._mutedSfx);
       E.sfxBtn.setAttribute("aria-pressed", this._mutedSfx ? "true" : "false");
@@ -733,8 +739,8 @@ export class UI {
   }
 
   // main calls this after applying saved settings so the buttons match the audio state
-  syncMute(musicMuted, sfxMuted) {
-    this._mutedMusic = !!musicMuted;
+  syncMute(musicLevel, sfxMuted) {
+    this._musicLevel = Math.min(2, Math.max(0, musicLevel | 0));
     this._mutedSfx = !!sfxMuted;
     this._paintMute();
   }
@@ -888,6 +894,7 @@ const CSS = `
 .pp-btn-icon { width: 48px; height: 48px; border-radius: 16px; }
 .pp-btn-icon .pp-ico { font-size: 21px; }
 .pp-btn.pp-off .pp-ico { opacity: .35; filter: grayscale(1); }
+.pp-btn.pp-low .pp-ico { opacity: .6; }
 
 /* ---- gesture status chip (top-left band) ----------------------------------- */
 .pp-chip { position: absolute; top: calc(var(--st) + 44px); left: calc(var(--sl) + 8px);

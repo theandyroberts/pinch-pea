@@ -3,8 +3,10 @@
 import { CFG } from "./config.js";
 
 const MUTE_LS_KEY = "pinchy-pea-muted";          // legacy single switch (migrated)
-const MUSIC_LS_KEY = "pinchy-pea-muted-music";
+const MUSIC_LS_KEY = "pinchy-pea-muted-music";   // legacy music bool (migrated)
+const MUSIC_LVL_KEY = "pinchy-pea-music-level";  // 0 normal · 1 low · 2 mute
 const SFX_LS_KEY = "pinchy-pea-muted-sfx";
+const MUSIC_LEVEL_GAIN = [1, 0.35, 0];
 const NO_OPTS = {};
 const STEP_OPTS = { volume: 0.55, ratejitter: 0.18 };
 
@@ -30,12 +32,15 @@ export class AudioMan {
     this._absent = Object.create(null);     // key -> true (failed; warned once)
     this._keyGain = Object.create(null);    // key -> GainNode for one-shots
 
-    // independent music / effects switches (legacy single switch mutes both)
-    this._mutedMusic = false;
+    // music has three levels (normal/low/mute); effects a simple switch.
+    // Legacy single switch and legacy music bool both migrate.
+    this._musicLevel = 0;
     this._mutedSfx = false;
     try {
       const legacy = localStorage.getItem(MUTE_LS_KEY) === "1";
-      this._mutedMusic = legacy || localStorage.getItem(MUSIC_LS_KEY) === "1";
+      const lvl = localStorage.getItem(MUSIC_LVL_KEY);
+      if (lvl !== null) this._musicLevel = Math.min(2, Math.max(0, lvl | 0));
+      else if (legacy || localStorage.getItem(MUSIC_LS_KEY) === "1") this._musicLevel = 2;
       this._mutedSfx = legacy || localStorage.getItem(SFX_LS_KEY) === "1";
     } catch (err) { /* storage unavailable (private mode) — default unmuted */ }
     this.musicBus = null;
@@ -80,8 +85,9 @@ export class AudioMan {
     window.addEventListener("keydown", this._onGesture, { capture: true, passive: true });
   }
 
-  get muted() { return this._mutedMusic && this._mutedSfx; }
-  get musicMuted() { return this._mutedMusic; }
+  get muted() { return this._musicLevel === 2 && this._mutedSfx; }
+  get musicMuted() { return this._musicLevel === 2; }
+  get musicLevel() { return this._musicLevel; }
   get sfxMuted() { return this._mutedSfx; }
 
   // manifest = { key: url, ... } — fetch everything in parallel; a missing or
@@ -146,7 +152,7 @@ export class AudioMan {
         this.master.gain.value = 1;
         this.master.connect(this.ctx.destination);
         this.musicBus = this.ctx.createGain();
-        this.musicBus.gain.value = this._mutedMusic ? 0 : 1;
+        this.musicBus.gain.value = MUSIC_LEVEL_GAIN[this._musicLevel];
         this.musicBus.connect(this.master);
         this.sfxBus = this.ctx.createGain();
         this.sfxBus.gain.value = this._mutedSfx ? 0 : 1;
@@ -286,15 +292,21 @@ export class AudioMan {
     this.play("step", STEP_OPTS);
   }
 
-  setMusicMuted(m) {
-    this._mutedMusic = !!m;
+  // 0 normal · 1 low · 2 mute
+  setMusicLevel(l) {
+    this._musicLevel = Math.min(2, Math.max(0, l | 0));
     try {
-      localStorage.setItem(MUSIC_LS_KEY, m ? "1" : "0");
-      localStorage.removeItem(MUTE_LS_KEY);            // legacy switch fully migrated
+      localStorage.setItem(MUSIC_LVL_KEY, String(this._musicLevel));
+      localStorage.removeItem(MUTE_LS_KEY);            // legacy switches fully migrated
+      localStorage.removeItem(MUSIC_LS_KEY);
     } catch (err) { /* storage unavailable — works for this session */ }
-    this._applyBus(this.musicBus, m);
-    return this._mutedMusic;
+    this._applyGain(this.musicBus, MUSIC_LEVEL_GAIN[this._musicLevel]);
+    return this._musicLevel;
   }
+
+  cycleMusicLevel() { return this.setMusicLevel((this._musicLevel + 1) % 3); }
+
+  setMusicMuted(m) { this.setMusicLevel(m ? 2 : 0); return this.musicMuted; }
 
   setSfxMuted(m) {
     this._mutedSfx = !!m;
@@ -302,11 +314,10 @@ export class AudioMan {
       localStorage.setItem(SFX_LS_KEY, m ? "1" : "0");
       localStorage.removeItem(MUTE_LS_KEY);
     } catch (err) { /* ignore */ }
-    this._applyBus(this.sfxBus, m);
+    this._applyGain(this.sfxBus, m ? 0 : 1);
     return this._mutedSfx;
   }
 
-  toggleMusicMute() { return this.setMusicMuted(!this._mutedMusic); }
   toggleSfxMute() { return this.setSfxMuted(!this._mutedSfx); }
 
   // legacy single switch: mutes/unmutes both channels together
@@ -317,9 +328,8 @@ export class AudioMan {
     return m;
   }
 
-  _applyBus(bus, m) {
+  _applyGain(bus, target) {
     if (!this.ctx || !bus) return;
-    const target = m ? 0 : 1;
     try { bus.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02); }
     catch (err) { bus.gain.value = target; }
   }

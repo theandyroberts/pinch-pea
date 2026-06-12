@@ -153,7 +153,7 @@ Procedural clay characters from Three.js primitives. Each returns
 - `constructor(cb)` — cb = {onCursor(px,py), onPinchStart(px,py), onPinchEnd(),
   onPalm(walking:boolean), onStatus(text)} (px,py in CSS pixels, already mirrored so moving
   hand right moves cursor right).
-- `async start(previewContainer)` — dynamic import("../vendor/mediapipe/vision_bundle.mjs");
+- `async start(previewContainer)` — dynamic import("../vendor/mediapipe/vision_bundle.js");
   `FilesetResolver.forVisionTasks("./vendor/mediapipe/wasm")`; HandLandmarker
   createFromOptions({baseOptions:{modelAssetPath:"./vendor/mediapipe/hand_landmarker.task"},
   runningMode:"VIDEO", numHands:1}). getUserMedia({video:{facingMode:"user", width:320,

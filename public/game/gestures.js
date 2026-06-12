@@ -68,7 +68,9 @@ export class HandMagic {
     this._starting = true;
     try {
       const { FilesetResolver, HandLandmarker } =
-        await import("../vendor/mediapipe/vision_bundle.mjs");
+        // .js not .mjs: the deploy CDN serves .mjs as application/octet-stream,
+        // which strict module-MIME checking rejects (hand magic then never starts)
+        await import("../vendor/mediapipe/vision_bundle.js");
       const fileset = await FilesetResolver.forVisionTasks("./vendor/mediapipe/wasm");
       // GPU delegate first (WebGL2) — CPU inference costs 10-30ms/frame on older
       // iPhones, which would drag the whole game down while hand magic is on

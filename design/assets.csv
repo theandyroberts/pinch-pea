@@ -17,5 +17,6 @@ sfx_place,block place sound,sfx,soft putty thump landing,1s,n/a,generate
 sfx_step,footstep sound,sfx,single soft squishy step on clay,1s,n/a,generate
 sfx_water,water ambient,sfx,gentle bubbling stream loop,5s loop,n/a,generate
 sfx_cheer,quest celebration jingle,sfx,tiny cheerful marimba chime burst,2s,n/a,generate
+sfx_giggle,Jaspea squeeze giggle,sfx,tiny cute high-pitched hee-hee-hee cartoon giggle,2s,n/a,generate
 deploy_thumbnail,marketplace/OG image,image,Peathan and Jaspea in pastel clay world in front of cozy clay house,16:9,FORMULA,generate
 deploy_favicon,site icon,image,smiling green clay pea face,1:1,FORMULA,generate

@@ -110,7 +110,7 @@ export class Interact {
       const p = this.player.body.pos;
       if (Math.hypot(jp.x - p.x, jp.z - p.z) < CFG.reach + 1) {
         this.jaspea.squeeze();
-        this.audio.play("pinch", { rate: 1.5 });
+        this.audio.play("giggle", { ratejitter: 0.08 });
         return true;
       }
     }

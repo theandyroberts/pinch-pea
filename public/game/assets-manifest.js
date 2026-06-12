@@ -5,7 +5,8 @@ export const AUDIO = {
   place: "./assets/audio/sfx_place.mp3",
   step:  "./assets/audio/sfx_step.mp3",
   water: "./assets/audio/sfx_water.mp3",
-  cheer: "./assets/audio/sfx_cheer.mp3"
+  cheer: "./assets/audio/sfx_cheer.mp3",
+  giggle: "./assets/audio/sfx_giggle.mp3"
 };
 export const SKY = "./assets/bg_sky.jpg";
 export const LOGO = "./assets/ui_logo.png";

@@ -1,0 +1,5 @@
+# intermediates & local tooling
+raw_assets/
+tools/.venv/
+*.zip
+.DS_Store

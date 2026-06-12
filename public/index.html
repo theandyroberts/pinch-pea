@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Pinchy Pea</title>
+<link rel="icon" href="./assets/favicon.png">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe8f4;
+    overscroll-behavior: none; touch-action: none;
+    font-family: -apple-system, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif; }
+  canvas#c { display: block; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #ui { position: fixed; inset: 0; pointer-events: none; }
+  #dev { position: fixed; top: max(4px, env(safe-area-inset-top)); left: 4px; color: #0a0;
+    font: 12px monospace; display: none; z-index: 99; pointer-events: none;
+    background: rgba(255,255,255,.6); padding: 2px 6px; border-radius: 6px; white-space: pre; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui"></div>
+<div id="dev"></div>
+<script type="module" src="./game/main.js"></script>
+</body>
+</html>

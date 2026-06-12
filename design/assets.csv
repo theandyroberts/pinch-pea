@@ -1,0 +1,21 @@
+id,role,type,description,size/ratio,style line ref,source
+tile_grass,block texture: meadow grass top,tile,mint-green clay meadow surface with tiny pinched grass bumps,1:1 256px,FORMULA,generate
+tile_terracotta,block texture: building brick,tile,warm terracotta clay brick surface with soft pinch marks,1:1 256px,FORMULA,generate
+tile_clay_plain,block texture: neutral clay (tinted in code for pink/purple/yellow/blue blocks),tile,smooth neutral cream clay surface with faint fingerprints,1:1 256px,FORMULA,generate
+tile_stone,block texture: stone,tile,pastel grey-lavender clay pebbly stone surface,1:1 256px,FORMULA,generate
+tile_wood,block texture: wood stick,tile,warm brown clay rolled wood with soft grain ridges,1:1 256px,FORMULA,generate
+tile_leaf,block texture: foliage,tile,fresh green clay bumpy leaf clusters,1:1 256px,FORMULA,generate
+tile_sand,block texture: sandy path,tile,pale cream clay sandy path with soft speckles,1:1 256px,FORMULA,generate
+bg_sky,skybox panorama,background,pastel claymation sky with puffy handmade clouds over soft hills,16:9 1280x720,FORMULA,generate
+ui_logo,title logo overlay,ui,"Pinchy Pea" puffy clay wordmark with pea face,1:1 keyed,FORMULA,generate
+char_peathan,hero character,3d_procedural,green pea hero with sprout hair and plum-purple backpack built from clay-shaded primitives,~1.0 hero-units,FORMULA (engine lighting + materials),procedural-code
+char_jaspea,sidekick character,3d_procedural,smaller lighter-green pea sidekick with single sprout leaf,~0.6 hero-units,FORMULA (engine lighting + materials),procedural-code
+fx_squish_puff,pinch/place particle puff,3d_procedural,soft pastel clay crumb particles,n/a,FORMULA (palette),procedural-code
+music_cozy,background music loop,music,warm gentle ukulele-and-marimba lullaby groove slow and cozy,40s loop,n/a,generate
+sfx_pinch,pinch/harvest sound,sfx,soft wet clay squish pop,1s,n/a,generate
+sfx_place,block place sound,sfx,soft putty thump landing,1s,n/a,generate
+sfx_step,footstep sound,sfx,single soft squishy step on clay,1s,n/a,generate
+sfx_water,water ambient,sfx,gentle bubbling stream loop,5s loop,n/a,generate
+sfx_cheer,quest celebration jingle,sfx,tiny cheerful marimba chime burst,2s,n/a,generate
+deploy_thumbnail,marketplace/OG image,image,Peathan and Jaspea in pastel clay world in front of cozy clay house,16:9,FORMULA,generate
+deploy_favicon,site icon,image,smiling green clay pea face,1:1,FORMULA,generate

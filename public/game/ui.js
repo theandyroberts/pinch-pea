@@ -12,7 +12,9 @@ import { BLOCKS, byKey, PALETTE_ORDER } from "./blocks.js";
 
 const TAU = Math.PI * 2;
 const STYLE_ID = "pp-ui-style";
-const MUTE_LS_KEY = "pinchy-pea-muted";   // mirrors audio.js persistence
+const MUTE_LS_KEY = "pinchy-pea-muted";          // legacy (read once for migration)
+const MUSIC_LS_KEY = "pinchy-pea-muted-music";   // mirror audio.js persistence
+const SFX_LS_KEY = "pinchy-pea-muted-sfx";
 
 // Icon glyphs (contract-specified; labels for a11y come from STR).
 const ICO = {
@@ -20,6 +22,7 @@ const ICO = {
   build: "\u{1F9F1}",      // 🧱
   sound: "\u{1F50A}",      // 🔊
   soundOff: "\u{1F507}",   // 🔇
+  music: "\u{1F3B5}",      // 🎵
   hand: "\u{1F590}",       // 🖐
   photo: "\u{1F4F7}",      // 📷
   jump: "⬆️",    // ⬆️
@@ -123,8 +126,13 @@ export class UI {
     this._mmLX = 1e9; this._mmLZ = 1e9; this._mmLYaw = 1e9;
 
     // persisted mute state for the speaker icon (audio.js owns the truth)
-    this._muted = false;
-    try { this._muted = localStorage.getItem(MUTE_LS_KEY) === "1"; } catch (e) { /* private mode */ }
+    this._mutedMusic = false;
+    this._mutedSfx = false;
+    try {
+      const legacy = localStorage.getItem(MUTE_LS_KEY) === "1";
+      this._mutedMusic = legacy || localStorage.getItem(MUSIC_LS_KEY) === "1";
+      this._mutedSfx = legacy || localStorage.getItem(SFX_LS_KEY) === "1";
+    } catch (e) { /* private mode */ }
 
     // precomputed swatch colors for every palette block
     this._swatchCss = {};
@@ -163,17 +171,28 @@ export class UI {
     el("div", "pp-compass-notch", compass);
     E.compassStrip = strip;
 
-    // --- small icon row (top-right): sound / hand magic / photo ----------
+    // --- small icon row (top-right): music / sounds / hand magic / photo ----
     const row = el("div", "pp-iconrow", this.root);
-    E.muteBtn = this._iconButton(row, this._muted ? ICO.soundOff : ICO.sound, S.btnMute, () => {
-      this.hooks.onMute && this.hooks.onMute();
-      let m = !this._muted;
-      try { m = localStorage.getItem(MUTE_LS_KEY) === "1"; } catch (e) { /* keep flip */ }
-      this._muted = m;
-      E.muteIco.textContent = m ? ICO.soundOff : ICO.sound;
-      E.muteBtn.setAttribute("aria-pressed", m ? "true" : "false");
+    E.musicBtn = this._iconButton(row, ICO.music, S.btnMusic, () => {
+      const r = this.hooks.onMuteMusic ? this.hooks.onMuteMusic() : !this._mutedMusic;
+      this._mutedMusic = typeof r === "boolean" ? r : !this._mutedMusic;
+      this._paintMute();
     });
-    E.muteIco = E.muteBtn.firstChild;
+    E.musicIco = E.musicBtn.firstChild;
+    E.sfxBtn = this._iconButton(row, this._mutedSfx ? ICO.soundOff : ICO.sound, S.btnSfx, () => {
+      const r = this.hooks.onMuteSfx ? this.hooks.onMuteSfx() : !this._mutedSfx;
+      this._mutedSfx = typeof r === "boolean" ? r : !this._mutedSfx;
+      this._paintMute();
+    });
+    E.sfxIco = E.sfxBtn.firstChild;
+    this._paintMute = () => {
+      E.musicBtn.classList.toggle("pp-off", this._mutedMusic);
+      E.musicBtn.setAttribute("aria-pressed", this._mutedMusic ? "true" : "false");
+      E.sfxIco.textContent = this._mutedSfx ? ICO.soundOff : ICO.sound;
+      E.sfxBtn.classList.toggle("pp-off", this._mutedSfx);
+      E.sfxBtn.setAttribute("aria-pressed", this._mutedSfx ? "true" : "false");
+    };
+    this._paintMute();
     E.handBtn = this._iconButton(row, ICO.hand, S.btnHandMagic, () => {
       this.hooks.onHandMagic && this.hooks.onHandMagic();
     });
@@ -713,6 +732,13 @@ export class UI {
     this.toast(this.str.toastNoClay ?? "");
   }
 
+  // main calls this after applying saved settings so the buttons match the audio state
+  syncMute(musicMuted, sfxMuted) {
+    this._mutedMusic = !!musicMuted;
+    this._mutedSfx = !!sfxMuted;
+    this._paintMute();
+  }
+
   onModeChanged(mode) {
     if (mode !== "pinch" && mode !== "build") return;
     const changed = mode !== this._mode;
@@ -861,6 +887,7 @@ const CSS = `
   right: calc(var(--sr) + 8px); display: flex; gap: 6px; z-index: 10; }
 .pp-btn-icon { width: 48px; height: 48px; border-radius: 16px; }
 .pp-btn-icon .pp-ico { font-size: 21px; }
+.pp-btn.pp-off .pp-ico { opacity: .35; filter: grayscale(1); }
 
 /* ---- gesture status chip (top-left band) ----------------------------------- */
 .pp-chip { position: absolute; top: calc(var(--st) + 44px); left: calc(var(--sl) + 8px);

@@ -13,6 +13,8 @@ export const STR = {
   btnHandMagic: "Hand magic",
   btnHandMagicOff: "Hands off",
   btnMute: "Sound",
+  btnMusic: "Music",
+  btnSfx: "Sounds",
   btnPhoto: "Photo",
 
   modePinch: "Pinch mode — tap a block to squish it up!",

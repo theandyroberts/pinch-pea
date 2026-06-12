@@ -151,7 +151,8 @@ async function boot() {
     onJump: (held) => input.setButton("jump", held),
     onModeToggle: () => interact.toggleMode(),
     onSelect: (key) => { inventory.select(key); if (interact.mode !== "build") interact.setMode("build"); },
-    onMute: () => audio.toggleMute(),
+    onMuteMusic: () => audio.toggleMusicMute(),
+    onMuteSfx: () => audio.toggleSfxMute(),
     onHandMagic: () => toggleHandMagic(),
     onPhoto: () => takePhoto()
   };
@@ -171,7 +172,7 @@ async function boot() {
     growing: interact.serialize().growing,
     player: { x: player.body.pos.x, y: player.body.pos.y, z: player.body.pos.z },
     jaspea: jaspea.position ? { ...jaspea.position } : null,
-    settings: { muted: audio.muted }
+    settings: { musicMuted: audio.musicMuted, sfxMuted: audio.sfxMuted }
   }));
 
   // ---------- hand magic (camera gestures, lazy) ----------
@@ -435,7 +436,12 @@ async function boot() {
   await audioReady;
   ui.showStart(() => {
     audio.unlock();
-    if (data?.settings?.muted && !audio.muted) audio.toggleMute();
+    const st = data?.settings;
+    if (st) {
+      audio.setMusicMuted(!!(st.musicMuted ?? st.muted));   // ?? st.muted: legacy saves
+      audio.setSfxMuted(!!(st.sfxMuted ?? st.muted));
+      ui.syncMute(audio.musicMuted, audio.sfxMuted);
+    }
     audio.music("music");
     ui.hideOverlay();
     if (!data) {

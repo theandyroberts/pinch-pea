@@ -2,7 +2,9 @@
 // when files are missing, never throws into the game loop. All tuning from CFG.
 import { CFG } from "./config.js";
 
-const MUTE_LS_KEY = "pinchy-pea-muted";
+const MUTE_LS_KEY = "pinchy-pea-muted";          // legacy single switch (migrated)
+const MUSIC_LS_KEY = "pinchy-pea-muted-music";
+const SFX_LS_KEY = "pinchy-pea-muted-sfx";
 const NO_OPTS = {};
 const STEP_OPTS = { volume: 0.55, ratejitter: 0.18 };
 
@@ -28,9 +30,16 @@ export class AudioMan {
     this._absent = Object.create(null);     // key -> true (failed; warned once)
     this._keyGain = Object.create(null);    // key -> GainNode for one-shots
 
-    this._muted = false;
-    try { this._muted = localStorage.getItem(MUTE_LS_KEY) === "1"; }
-    catch (err) { /* storage unavailable (private mode) — default unmuted */ }
+    // independent music / effects switches (legacy single switch mutes both)
+    this._mutedMusic = false;
+    this._mutedSfx = false;
+    try {
+      const legacy = localStorage.getItem(MUTE_LS_KEY) === "1";
+      this._mutedMusic = legacy || localStorage.getItem(MUSIC_LS_KEY) === "1";
+      this._mutedSfx = legacy || localStorage.getItem(SFX_LS_KEY) === "1";
+    } catch (err) { /* storage unavailable (private mode) — default unmuted */ }
+    this.musicBus = null;
+    this.sfxBus = null;
 
     this._musicKey = null;
     this._musicStarted = false;
@@ -71,7 +80,9 @@ export class AudioMan {
     window.addEventListener("keydown", this._onGesture, { capture: true, passive: true });
   }
 
-  get muted() { return this._muted; }
+  get muted() { return this._mutedMusic && this._mutedSfx; }
+  get musicMuted() { return this._mutedMusic; }
+  get sfxMuted() { return this._mutedSfx; }
 
   // manifest = { key: url, ... } — fetch everything in parallel; a missing or
   // corrupt file warns once and is simply absent forever. Never rejects.
@@ -132,8 +143,14 @@ export class AudioMan {
       try {
         this.ctx = new AC();
         this.master = this.ctx.createGain();
-        this.master.gain.value = this._muted ? 0 : 1;
+        this.master.gain.value = 1;
         this.master.connect(this.ctx.destination);
+        this.musicBus = this.ctx.createGain();
+        this.musicBus.gain.value = this._mutedMusic ? 0 : 1;
+        this.musicBus.connect(this.master);
+        this.sfxBus = this.ctx.createGain();
+        this.sfxBus.gain.value = this._mutedSfx ? 0 : 1;
+        this.sfxBus.connect(this.master);
       } catch (err) {
         this.ctx = null;
         this.master = null;
@@ -168,7 +185,7 @@ export class AudioMan {
       let gain = this._keyGain[key];
       if (!gain) {
         gain = ctx.createGain();
-        gain.connect(this.master);
+        gain.connect(this.sfxBus || this.master);
         this._keyGain[key] = gain;
       }
       gain.gain.setValueAtTime(Math.max(0, volume * CFG.volumes.sfx), ctx.currentTime);
@@ -199,7 +216,7 @@ export class AudioMan {
       const t = ctx.currentTime;
       gain.gain.setValueAtTime(0.0001, t);
       gain.gain.linearRampToValueAtTime(CFG.volumes.music, t + 2);
-      gain.connect(this.master);
+      gain.connect(this.musicBus || this.master);
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.loop = true;
@@ -226,7 +243,7 @@ export class AudioMan {
         try {
           const gain = ctx.createGain();
           gain.gain.setValueAtTime(0.0001, now);
-          gain.connect(this.master);
+          gain.connect(this.sfxBus || this.master);
           const src = ctx.createBufferSource();
           src.buffer = buf;
           src.loop = true;
@@ -269,15 +286,41 @@ export class AudioMan {
     this.play("step", STEP_OPTS);
   }
 
+  setMusicMuted(m) {
+    this._mutedMusic = !!m;
+    try {
+      localStorage.setItem(MUSIC_LS_KEY, m ? "1" : "0");
+      localStorage.removeItem(MUTE_LS_KEY);            // legacy switch fully migrated
+    } catch (err) { /* storage unavailable — works for this session */ }
+    this._applyBus(this.musicBus, m);
+    return this._mutedMusic;
+  }
+
+  setSfxMuted(m) {
+    this._mutedSfx = !!m;
+    try {
+      localStorage.setItem(SFX_LS_KEY, m ? "1" : "0");
+      localStorage.removeItem(MUTE_LS_KEY);
+    } catch (err) { /* ignore */ }
+    this._applyBus(this.sfxBus, m);
+    return this._mutedSfx;
+  }
+
+  toggleMusicMute() { return this.setMusicMuted(!this._mutedMusic); }
+  toggleSfxMute() { return this.setSfxMuted(!this._mutedSfx); }
+
+  // legacy single switch: mutes/unmutes both channels together
   toggleMute() {
-    this._muted = !this._muted;
-    try { localStorage.setItem(MUTE_LS_KEY, this._muted ? "1" : "0"); }
-    catch (err) { /* storage unavailable — mute still works for this session */ }
-    if (this.ctx && this.master) {
-      const target = this._muted ? 0 : 1;
-      try { this.master.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02); }
-      catch (err) { this.master.gain.value = target; }
-    }
-    return this._muted;
+    const m = !this.muted;
+    this.setMusicMuted(m);
+    this.setSfxMuted(m);
+    return m;
+  }
+
+  _applyBus(bus, m) {
+    if (!this.ctx || !bus) return;
+    const target = m ? 0 : 1;
+    try { bus.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02); }
+    catch (err) { bus.gain.value = target; }
   }
 }

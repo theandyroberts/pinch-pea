@@ -17,6 +17,7 @@ import { AudioMan } from "./audio.js";
 import { Quests } from "./quests.js";
 import { SaveGame } from "./save.js";
 import { UI } from "./ui.js";
+import { VERSION } from "./version.js";
 
 const canvas = document.getElementById("c");
 const devEl = document.getElementById("dev");
@@ -66,6 +67,7 @@ function addSkyDome() {
 // ---------- boot ----------
 const inventory = new Inventory();
 const ui = new UI(document.getElementById("ui"), { inventory, strings: STR });
+ui.setVersion(VERSION);
 ui.showLoading();
 
 const audio = new AudioMan();

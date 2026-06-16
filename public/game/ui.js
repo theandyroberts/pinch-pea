@@ -350,6 +350,12 @@ export class UI {
       E.startBtn.classList.remove("show");
       cb();
     });
+    E.version = el("div", "pp-version", ov);   // tiny build tag, set via setVersion()
+  }
+
+  // small build tag on the title screen so you can tell which version is live
+  setVersion(v) {
+    if (this._els.version) this._els.version.textContent = v ?? "";
   }
 
   _iconButton(parent, glyph, label, fn) {
@@ -1099,6 +1105,9 @@ const CSS = `
 .pp-start.show { display: block; }
 .pp-start.pp-pressed { transform: translateY(4px);
   box-shadow: 0 2px 0 #5c9647, 0 6px 12px rgba(63,52,41,.2); }
+.pp-version { position: absolute; bottom: calc(10px + env(safe-area-inset-bottom));
+  left: 0; right: 0; text-align: center; font-size: 11px; font-weight: 700;
+  letter-spacing: .02em; color: #3f3429; opacity: .4; pointer-events: none; }
 
 /* ---- keyframes -------------------------------------------------------------- */
 @keyframes ppBob { 0%, 100% { transform: translateY(0) rotate(-1.5deg); }

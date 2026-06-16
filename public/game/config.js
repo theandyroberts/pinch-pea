@@ -42,10 +42,35 @@ export const CFG = {
 
   stackMax: 999,           // max of any one block a player can hold (badge fits 3 digits)
   startInventory: { pink: 24, cream: 47, yellow: 16, blue: 9, wood: 32, lavender: 5 },
+
+  // Quest ladder (data-driven, see docs/superpowers/specs/2026-06-15-quest-ladder-design.md).
+  // One gentle goal at a time, teaching a verb per rung; the house is the finale.
+  // type drives how progress is measured; goal meaning depends on type:
+  //   pinch/place/flowers/bridge → a count · growTree/hugJaspea → a count
+  //   standHeight → target block-Y to stand on (player-placed) · blueprint → the cozy_home shell
+  questSaveVersion: 2,
+  quests: [
+    { id: "pinch3",        type: "pinch",       goal: 3  },
+    { id: "place5",        type: "place",       goal: 5  },
+    { id: "hug_jaspea",    type: "hugJaspea",   goal: 3  },
+    { id: "grow_tree",     type: "growTree",    goal: 1  },
+    { id: "flower_garden", type: "flowers",     goal: 5  },
+    { id: "little_hill",   type: "standHeight", goal: 17 },  // ~seaLevel+5; verify in-game
+    { id: "bridge",        type: "bridge",      goal: 6  },
+    { id: "sky_tower",     type: "standHeight", goal: 24 },
+    { id: "big_wall",      type: "place",       goal: 20 },
+    { id: "cozy_home",     type: "blueprint"             }
+  ],
   unlockBundles: {
-    cozy_home: { lavender: 20 },
+    pinch3:        { cream: 10 },
+    place5:        { yellow: 10 },
+    hug_jaspea:    { blue: 10 },
+    grow_tree:     { wood: 12 },
     flower_garden: { yellow: 24 },
-    bridge: { blue: 24 },
-    sky_tower: { pink: 24, cream: 24 }
+    little_hill:   { lavender: 15 },
+    bridge:        { blue: 24 },
+    sky_tower:     { pink: 24 },
+    big_wall:      { cream: 20, pink: 10 },
+    cozy_home:     { lavender: 20 }
   }
 };

@@ -3,18 +3,17 @@ import { B, BLOCKS } from "./blocks.js";
 import { CFG } from "./config.js";
 import { STR } from "../strings.js";
 
-// Quest line: one gentle goal at a time. Progress flows in from interact.js
-// (onBlockPlaced / onBlockRemoved) and from main's slow stand-check; the
-// cozy_home quest draws a softly pulsing "ghost blueprint" the kid fills in,
-// like a dashed-outline house waiting to be hugged into existence.
+// Quest line: one gentle goal at a time, defined as data in CFG.quests and
+// dispatched here by `type`. Progress flows in from interact.js (onBlockPlaced /
+// onBlockRemoved / onTreeGrown / onJaspeaHug) and from main's slow stand-check.
+// The final `blueprint` quest draws a softly pulsing "ghost blueprint" the kid
+// fills in — a dashed-outline house waiting to be hugged into existence.
 
-const QUEST_IDS = ["cozy_home", "flower_garden", "bridge", "sky_tower"];
+const QUESTS = CFG.quests;
 
-const FLOWER_GOAL = 5;
-const BRIDGE_GOAL = 12;
-const SKY_Y = 24;                 // sky_tower: stand on a placed block this high
 const COZY_FILL_RATIO = 0.85;     // blueprint counts as done at 85% filled
 const PLACED_CAP = 4000;          // playerPlaced FIFO cap
+const ALMOST_CLOUDS_Y = 24;       // only the real sky tower earns the "almost!" line
 
 // blueprint shape: 6(x) × 4(z) footprint, walls 3 high on the perimeter,
 // a 1×2 doorway centered on the front long side, a 1×1 window on the back.
@@ -52,14 +51,12 @@ export class Quests {
     };
 
     this.activeIndex = 0;
-    this.flowerCount = 0;
-    this.bridgeCount = 0;
-    this.towerBest = 0;              // sky_tower: highest placed block stood on
+    this.progress = 0;               // active quest's counter; meaning depends on its type
     this.playerPlaced = new Set();   // "x,y,z" keys, insertion-ordered for FIFO cap
     this._saidAllDone = false;
     this._saidAlmost = false;
 
-    // cozy_home ghost state
+    // blueprint ghost state (only built while the blueprint quest is active)
     this.ghost = null;
     this.ghostMat = null;
     this._cells = null;              // [{x,y,z,dx,dz,ly}] blueprint wall cells
@@ -77,6 +74,9 @@ export class Quests {
     this._activate(0);
   }
 
+  _def(i) { return QUESTS[i] || null; }
+  _activeType() { const d = this._def(this.activeIndex); return d ? d.type : null; }
+
   // ---- events from interact.js --------------------------------------------
 
   onBlockPlaced(x, y, z, id) {
@@ -84,25 +84,32 @@ export class Quests {
     // flowers tracked too, so pinching WILD flowers never docks quest progress
     if (def && (def.solid || id === B.FLOWER)) this._trackPlaced(x + "," + y + "," + z);
 
-    const q = this.activeIndex;
-    if (q === 0) {
-      if (this._reevalCell(x, y, z)) {
+    const t = this._activeType();
+    const goal = this._activeGoal();
+    if (t === "place") {
+      if (def && def.solid) {
+        this.progress++;
         this._emitProgress();
-        this._maybeCompleteCozy();
+        if (this.progress >= goal) this._complete(x + 0.5, y + 0.5, z + 0.5);
       }
-    } else if (q === 1) {
+    } else if (t === "flowers") {
       if (id === B.FLOWER) {
-        this.flowerCount++;
+        this.progress++;
         this._emitProgress();
-        if (this.flowerCount >= FLOWER_GOAL) this._complete(x + 0.5, y + 0.5, z + 0.5);
+        if (this.progress >= goal) this._complete(x + 0.5, y + 0.5, z + 0.5);
       }
-    } else if (q === 2) {
+    } else if (t === "bridge") {
       // a bridge block: solid, with water within the 2 cells directly below at place time
       if (def && def.solid &&
           (this.world.get(x, y - 1, z) === B.WATER || this.world.get(x, y - 2, z) === B.WATER)) {
-        this.bridgeCount++;
+        this.progress++;
         this._emitProgress();
-        if (this.bridgeCount >= BRIDGE_GOAL) this._complete(x + 0.5, y + 1.5, z + 0.5);
+        if (this.progress >= goal) this._complete(x + 0.5, y + 1.5, z + 0.5);
+      }
+    } else if (t === "blueprint") {
+      if (this._reevalCell(x, y, z)) {
+        this._emitProgress();
+        this._maybeCompleteCozy();
       }
     }
   }
@@ -110,19 +117,46 @@ export class Quests {
   onBlockRemoved(x, y, z, id) {
     const wasPlaced = this.playerPlaced.delete(x + "," + y + "," + z);
 
-    const q = this.activeIndex;
-    if (q === 0) {
-      if (this._reevalCell(x, y, z)) this._emitProgress();
-    } else if (q === 1 && id === B.FLOWER && wasPlaced && this.flowerCount > 0) {
-      this.flowerCount--;                       // pinched own planted flower back up
+    const t = this._activeType();
+    if (t === "pinch") {
+      // onBlockRemoved fires only from a pinch/harvest, so every call is one squish
+      this.progress++;
       this._emitProgress();
+      if (this.progress >= this._activeGoal()) this._complete(x + 0.5, y + 0.5, z + 0.5);
+    } else if (t === "flowers" && id === B.FLOWER && wasPlaced && this.progress > 0) {
+      this.progress--;                          // pinched own planted flower back up
+      this._emitProgress();
+    } else if (t === "blueprint") {
+      if (this._reevalCell(x, y, z)) this._emitProgress();
     }
   }
 
-  // sky_tower: main calls this ~2/s with the player's feet position.
-  // Progress = the highest player-placed block stood on, toward SKY_Y.
+  // grow_tree: interact calls this when a sapling matures into a tree.
+  onTreeGrown(x, y, z) {
+    if (this._activeType() !== "growTree") return;
+    this.progress++;
+    this._emitProgress();
+    if (this.progress >= this._activeGoal()) this._complete(x + 0.5, y + 1.5, z + 0.5);
+  }
+
+  // hug_jaspea: interact calls this when the player squeezes Jaspea.
+  onJaspeaHug(x, y, z) {
+    if (this._activeType() !== "hugJaspea") return;
+    this.progress++;
+    this._emitProgress();
+    if (this.progress >= this._activeGoal()) {
+      const cx = typeof x === "number" ? x : 0;
+      const cy = typeof y === "number" ? y : 0;
+      const cz = typeof z === "number" ? z : 0;
+      this._complete(cx, cy + 1, cz);
+    }
+  }
+
+  // standHeight: main calls this ~2/s with the player's feet position.
+  // Progress = the highest player-placed block stood on, toward the goal Y.
   checkStand(pos) {
-    if (this.activeIndex !== 3 || !pos) return false;
+    if (this._activeType() !== "standHeight" || !pos) return false;
+    const goalY = this._activeGoal();
     // feet within 1.2 above the block top → block y in [py-2.2, py-0.9]
     const byMax = Math.floor(pos.y - 0.9);
     const byMin = Math.max(1, Math.ceil(pos.y - 2.2));
@@ -135,15 +169,15 @@ export class Quests {
           if (Math.abs(pos.x - (bx + 0.5)) > 0.6) continue;
           if (!this.playerPlaced.has(bx + "," + by + "," + bz)) continue;
           if (!this.world.isSolid(bx, by, bz)) continue;
-          if (by > this.towerBest) {
-            this.towerBest = by;
+          if (by > this.progress) {
+            this.progress = by;
             this._emitProgress();
-            if (!this._saidAlmost && by >= SKY_Y - 6 && by < SKY_Y) {
+            if (!this._saidAlmost && goalY >= ALMOST_CLOUDS_Y && by >= goalY - 6 && by < goalY) {
               this._saidAlmost = true;
               this.hooks.say?.(STR.jaspea.almostClouds);
             }
           }
-          if (by >= SKY_Y) {
+          if (by >= goalY) {
             this._complete(pos.x, pos.y + 0.8, pos.z);
             return true;
           }
@@ -165,7 +199,7 @@ export class Quests {
   // ---- queries -------------------------------------------------------------
 
   activeQuest() {
-    if (this.activeIndex >= QUEST_IDS.length) return null;
+    if (this.activeIndex >= QUESTS.length) return null;
     return this._info(this.activeIndex);
   }
 
@@ -173,21 +207,22 @@ export class Quests {
 
   serialize() {
     return {
+      v: CFG.questSaveVersion,
       active: this.activeIndex,
-      flowers: this.flowerCount,
-      bridge: this.bridgeCount,
-      tower: this.towerBest,
+      progress: this.progress,
       placed: Array.from(this.playerPlaced)
     };
   }
 
   load(data) {
-    if (!data || typeof data !== "object") return;
-    const n = QUEST_IDS.length;
+    if (!data || typeof data !== "object" || data.v !== CFG.questSaveVersion) {
+      // old 4-quest save (or none): start the ladder fresh at level 1. The world's
+      // blocks, stacks and inventory live in save.js and are untouched by this.
+      return;
+    }
+    const n = QUESTS.length;
     const a = toCount(data.active, n);
-    this.flowerCount = toCount(data.flowers, FLOWER_GOAL);
-    this.bridgeCount = toCount(data.bridge, BRIDGE_GOAL);
-    this.towerBest = toCount(data.tower, SKY_Y);
+
     this.playerPlaced.clear();
     if (Array.isArray(data.placed)) {
       const start = Math.max(0, data.placed.length - PLACED_CAP);
@@ -195,45 +230,60 @@ export class Quests {
         if (typeof data.placed[i] === "string") this.playerPlaced.add(data.placed[i]);
       }
     }
+
     this._saidAllDone = a >= n;
     if (a >= n) {
-      this.activeIndex = a;
+      this.activeIndex = a;                  // free build forever
       this._disposeGhost();
-    } else {
-      this._activate(a);   // re-shows ghost + recounts pre-fill if cozy_home
+      return;
+    }
+
+    this._activate(a);                       // re-shows ghost + recounts pre-fill if blueprint
+    // restore the active quest's counter (blueprint re-derives from the world, so skip it)
+    if (this._activeType() !== "blueprint") {
+      this.progress = toCount(data.progress, this._activeGoal());
+      this._emitProgress();
     }
   }
 
   // ---- quest lifecycle (internal) -------------------------------------------
 
+  _activeGoal() {
+    const d = this._def(this.activeIndex);
+    return (d && typeof d.goal === "number") ? d.goal : 1;
+  }
+
   _activate(i) {
     this.activeIndex = i;
-    if (i === 0) {
+    this.progress = 0;
+    this._saidAlmost = false;
+    if (this._activeType() === "blueprint") {
       this._activateCozy();
     } else {
       this._disposeGhost();
     }
     this._emitProgress();
-    if (i === 0) this._maybeCompleteCozy();   // a loaded world may already qualify
+    if (this._activeType() === "blueprint") this._maybeCompleteCozy();  // a loaded world may already qualify
   }
 
   _complete(cx, cy, cz) {
     const i = this.activeIndex;
-    if (i >= QUEST_IDS.length) return;
-    const id = QUEST_IDS[i];
+    if (i >= QUESTS.length) return;
+    const id = QUESTS[i].id;
     const q = this._info(i);
     q.done = q.total;
     this.hooks.onProgress?.(q, q.done, q.total);   // card reads "total / total"
-    if (i === 0) this._disposeGhost();
+    if (this._activeType() === "blueprint") this._disposeGhost();
     this.hooks.confetti?.(cx, cy, cz);
     this.hooks.grant?.(CFG.unlockBundles[id]);
     this.hooks.say?.(STR.quests[id].done);
     this.hooks.onComplete?.(q);
     const next = i + 1;
-    if (next < QUEST_IDS.length) {
+    if (next < QUESTS.length) {
       this._activate(next);
     } else {
       this.activeIndex = next;                     // free build forever after
+      this.progress = 0;
       if (!this._saidAllDone) {
         this._saidAllDone = true;
         this.hooks.say?.(STR.questAllDone);
@@ -242,17 +292,21 @@ export class Quests {
   }
 
   _info(i) {
-    const id = QUEST_IDS[i];
+    const d = QUESTS[i];
+    const id = d.id;
     let done = 0, total = 1;
-    if (i === 0) { total = this._cozyNeeded || 1; done = Math.min(this._cozyDone, total); }
-    else if (i === 1) { total = FLOWER_GOAL; done = Math.min(this.flowerCount, total); }
-    else if (i === 2) { total = BRIDGE_GOAL; done = Math.min(this.bridgeCount, total); }
-    else if (i === 3) { total = SKY_Y; done = Math.min(this.towerBest, total); }
+    if (d.type === "blueprint") {
+      total = this._cozyNeeded || 1;
+      done = Math.min(this._cozyDone, total);
+    } else {
+      total = (typeof d.goal === "number") ? d.goal : 1;
+      done = Math.min(this.progress, total);
+    }
     return { id, name: STR.quests[id].name, done, total };
   }
 
   _emitProgress() {
-    if (this.activeIndex >= QUEST_IDS.length) return;
+    if (this.activeIndex >= QUESTS.length) return;
     const q = this._info(this.activeIndex);
     this.hooks.onProgress?.(q, q.done, q.total);
   }
@@ -282,7 +336,7 @@ export class Quests {
   }
 
   _maybeCompleteCozy() {
-    if (this.activeIndex !== 0 || this._cozyDone < this._cozyNeeded) return;
+    if (this._activeType() !== "blueprint" || this._cozyDone < this._cozyNeeded) return;
     const s = this.homeSite;
     this._complete(s.x + HOME_W / 2, this._homeY0 + HOME_H, s.z + HOME_D / 2);
   }

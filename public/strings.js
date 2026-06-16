@@ -29,10 +29,16 @@ export const STR = {
 
   questTitle: "Make your world!",
   quests: {
-    cozy_home: { name: "Build a cozy bubble home!", done: "What a cozy home! Jaspea loves it!" },
+    pinch3: { name: "Squish up 3 blocks of clay!", done: "Nice squishing! Your pockets are full!" },
+    place5: { name: "Build with 5 blocks of clay!", done: "Look what you made!" },
+    hug_jaspea: { name: "Give Jaspea 3 squishy hugs!", done: "Hee hee! Jaspea loves hugs!" },
+    grow_tree: { name: "Plant a sprout and grow a tree!", done: "A whole tree from one little sprout!" },
     flower_garden: { name: "Plant 5 happy flowers!", done: "The garden smells amazing!" },
-    bridge: { name: "Build a bridge over the water!", done: "A bridge! Now the peas can visit the pink isle!" },
-    sky_tower: { name: "Build up to the clouds and stand on top!", done: "You can see the whole world from here!" }
+    little_hill: { name: "Stack clay and stand up high!", done: "Up high! What a lovely view!" },
+    bridge: { name: "Build a little bridge over the water!", done: "A bridge! Now the peas can cross!" },
+    sky_tower: { name: "Build all the way up to the clouds!", done: "You can see the whole world from here!" },
+    big_wall: { name: "Build a big clay wall — 20 blocks!", done: "What a mighty wall!" },
+    cozy_home: { name: "Build a cozy bubble home!", done: "What a cozy home! Jaspea loves it!" }
   },
   questAllDone: "You made the world wonderful. Keep building anything you dream!",
   questProgress: (done, total) => `${done} / ${total}`,

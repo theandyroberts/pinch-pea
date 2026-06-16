@@ -111,6 +111,7 @@ export class Interact {
       if (Math.hypot(jp.x - p.x, jp.z - p.z) < CFG.reach + 1) {
         this.jaspea.squeeze();
         this.audio.play("giggle", { ratejitter: 0.08 });
+        this.quests?.onJaspeaHug?.(jp.x, jp.y, jp.z);
         return true;
       }
     }
@@ -229,6 +230,7 @@ export class Interact {
     this.particles.confetti(g.x + 0.5, ty + 1, g.z + 0.5);
     this.audio.play("cheer", { volume: 0.6 });
     this.jaspea?.sayKey?.("grow");
+    this.quests?.onTreeGrown?.(g.x, g.y, g.z);
   }
 
   serialize() { return { mode: this.mode, growing: this.growing }; }

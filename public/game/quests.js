@@ -253,7 +253,10 @@ export class Quests {
     return (d && typeof d.goal === "number") ? d.goal : 1;
   }
 
-  _activate(i) {
+  // announce=true only on live transitions (a quest completing into the next),
+  // never from the constructor or load() — at those points main's other systems
+  // (interact, jaspea) may not exist yet. main re-checks the active quest at boot.
+  _activate(i, announce = false) {
     this.activeIndex = i;
     this.progress = 0;
     this._saidAlmost = false;
@@ -263,6 +266,7 @@ export class Quests {
       this._disposeGhost();
     }
     this._emitProgress();
+    if (announce) this.hooks.onActivate?.(this._info(i));
     if (this._activeType() === "blueprint") this._maybeCompleteCozy();  // a loaded world may already qualify
   }
 
@@ -280,7 +284,7 @@ export class Quests {
     this.hooks.onComplete?.(q);
     const next = i + 1;
     if (next < QUESTS.length) {
-      this._activate(next);
+      this._activate(next, true);
     } else {
       this.activeIndex = next;                     // free build forever after
       this.progress = 0;

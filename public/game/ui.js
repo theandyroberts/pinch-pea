@@ -245,7 +245,7 @@ export class UI {
       this._palItems.push({ key, el: item, countEl: ct, lastN: -1 });
     }
 
-    const tab = btn("pp-pal-tab", this.root);
+    const tab = btn("pp-pal-tab nudge", this.root);   // pulse until first opened
     E.tab = tab;
     tab.setAttribute("aria-label", S.btnPalette ?? "");
     tab.setAttribute("aria-expanded", "false");
@@ -460,10 +460,19 @@ export class UI {
   }
 
   _setDrawer(open) {
+    if (this._drawerTimer) { clearTimeout(this._drawerTimer); this._drawerTimer = null; }
     this._drawerOpen = open;
     this._els.drawer.classList.toggle("open", open);
     this._els.scrim.classList.toggle("show", open);
     this._els.tab.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) this._els.tab.classList.remove("nudge");   // discovered — stop the come-hither pulse
+  }
+
+  // briefly reveal the Clay box, then tuck it away — teaches where off-hotbar
+  // tools live (e.g. when a quest hands the player a sprout or flower)
+  flashDrawer(ms = 2600) {
+    this._setDrawer(true);
+    this._drawerTimer = setTimeout(() => { if (this._drawerOpen) this._setDrawer(false); }, ms);
   }
 
   _applyModeButton() {
@@ -926,6 +935,13 @@ const CSS = `
   gap: 6px; pointer-events: auto; touch-action: none;
   padding-left: var(--sl); transition: transform .12s ease; }
 .pp-pal-tab.pp-pressed { transform: scale(.95); }
+/* come-hither pulse until the player first opens the Clay box (more tools live here) */
+.pp-pal-tab.nudge { animation: ppTabNudge 1.8s ease-in-out infinite; }
+@keyframes ppTabNudge {
+  0%, 100% { transform: translateX(0); box-shadow: var(--shadow); }
+  50% { transform: translateX(7px); box-shadow: 0 0 0 4px rgba(255,210,120,.55), var(--shadow); }
+}
+@media (prefers-reduced-motion: reduce) { .pp-pal-tab.nudge { animation: none; } }
 .pp-tab-ico { font-size: 21px; line-height: 1; }
 .pp-tab-dot { width: 15px; height: 15px; border-radius: 50%;
   box-shadow: inset 0 -2px 3px rgba(63,52,41,.22), 0 0 0 2px #fff; }

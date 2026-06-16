@@ -132,7 +132,8 @@ async function boot() {
         }
       },
       say: (t) => ui.say(t),
-      confetti: (x, y, z) => particles.confetti(x, y, z)
+      confetti: (x, y, z) => particles.confetti(x, y, z),
+      onActivate: (q) => equipForQuest(q, true)   // a new quest just began — equip + reveal
     }
   });
   if (data?.quests) quests.load(data.quests);
@@ -141,6 +142,24 @@ async function boot() {
     world, scene, camera, player, jaspea, inventory, particles, audio, quests, ui
   });
   if (data?.mode || data?.growing) interact.load({ mode: data.mode, growing: data.growing });
+
+  // Some quests need a tool that isn't on the 6-slot hotbar (Sprout, Flower). Put it
+  // straight into the player's hand in build mode so "tap the ground" just works; on
+  // first reach (reveal) also flash the Clay box open + a Jaspea hint, so the kid
+  // learns those tools live in the drawer.
+  const QUEST_TOOL = { growTree: "sapling", flowers: "flower" };
+  const QUEST_TOOL_TIP = { growTree: "sproutTip", flowers: "flowerPlantTip" };
+  function equipForQuest(q, reveal) {
+    if (!q) return;
+    const def = (CFG.quests || []).find(d => d.id === q.id);
+    const tool = def && QUEST_TOOL[def.type];
+    if (!tool) return;
+    inventory.select(tool);
+    interact.setMode("build");
+    ui.refresh();
+    if (reveal) { ui.flashDrawer?.(); jaspea.sayKey?.(QUEST_TOOL_TIP[def.type]); }
+  }
+  equipForQuest(quests.activeQuest(), false);   // loaded straight into a planting quest?
 
   const input = new Input(canvas);
   input.onModeToggle = () => interact.toggleMode();

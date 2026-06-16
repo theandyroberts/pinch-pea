@@ -57,6 +57,8 @@ export const STR = {
     idle3: "Your backpack looks heavy, Peathan!",
     almostClouds: "Higher! Almost at the clouds!",
     flowerTip: "Pinch the little flowers in the meadow!",
+    sproutTip: "I put a sprout in your hand from the Clay box — tap the ground to plant it!",
+    flowerPlantTip: "I gave you flowers from the Clay box — tap the ground to plant them!",
     rescue: "Hup! Up you go, Peathan!"
   },
 

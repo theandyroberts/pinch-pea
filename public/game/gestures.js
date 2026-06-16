@@ -26,6 +26,19 @@ function dist2(a, b) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+// Palm-walk steering: map the hand's horizontal screen position to a turn signal in
+// [-1, 1]. Hand left of center → negative (turn left), right → positive; a center
+// dead zone reads as 0, and the magnitude ramps smoothly from the dead-zone edge to
+// the screen edge. Pure + exported so it can be unit-tested without a camera.
+export function steerFromCursor(cx, width, dead) {
+  if (!(width > 0)) return 0;
+  const off = (cx - width / 2) / (width / 2);   // -1 (left edge) .. +1 (right edge)
+  const d = dead || 0;
+  const mag = (Math.abs(off) - d) / (1 - d);    // 0 at dead-zone edge, 1 at screen edge
+  if (mag <= 0) return 0;
+  return Math.sign(off) * Math.min(1, mag);
+}
+
 export class HandMagic {
   constructor(cb) {
     this._cb = cb || {};
@@ -192,6 +205,7 @@ export class HandMagic {
     this._resetGestureState();
     if (wasPinching) this._cb.onPinchEnd?.();
     this._cb.onPalm?.(false);
+    this._cb.onSteer?.(0);
   }
 
   // camera vanished mid-session: stop cleanly, THEN report (stop's onPalm(false)
@@ -256,7 +270,12 @@ export class HandMagic {
       if (this._walking) {
         this._walking = false;
         this._cb.onPalm?.(false);
+        this._cb.onSteer?.(0);
       }
+    }
+    // while walking, steer by which side of the screen the hand is on
+    if (this._walking) {
+      this._cb.onSteer?.(steerFromCursor(this._cx, window.innerWidth, CFG.gestureSteerDead));
     }
   }
 
@@ -269,7 +288,7 @@ export class HandMagic {
     this._resetGestureState();
     this._clearOverlay();
     if (wasPinching) this._cb.onPinchEnd?.();
-    if (wasWalking) this._cb.onPalm?.(false);
+    if (wasWalking) { this._cb.onPalm?.(false); this._cb.onSteer?.(0); }
   }
 
   _resetGestureState() {

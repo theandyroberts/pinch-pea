@@ -17,6 +17,7 @@ export class Player {
     this.moving = false;
     this.speed = 0;
     this.gestureWalk = false;               // set by hand-magic "open palm"
+    this.gestureSteer = 0;                   // hand-magic steer: -1 (left) .. +1 (right)
   }
 
   update(dt, axis, jumpHeld, camForward, world, audio) {

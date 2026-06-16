@@ -211,7 +211,9 @@ async function boot() {
   function gestureCleanup() {
     handMagic = null; gestureCursor = null; gesturePinching = false;
     player.gestureWalk = false;
+    player.gestureSteer = 0;
     ui.gestureActive(false);
+    ui.hideGestureGuide();
   }
   async function toggleHandMagic() {
     if (gestureBusy) return;
@@ -223,22 +225,26 @@ async function boot() {
     }
     gestureBusy = true;
     ui.gestureStatus(STR.handMagicLoading);
+    ui.showGestureGuide();             // teach the gestures while the camera warms up
     try {
       const { HandMagic } = await import("./gestures.js");
       handMagic = new HandMagic({
         onCursor: (px, py) => { gestureCursor = { x: px, y: py }; ui.gestureCursor(px, py, gesturePinching); },
         onPinchStart: (px, py) => { gesturePinching = true; interact.tapAt(px, py, false); ui.gestureCursor(px, py, true); },
         onPinchEnd: () => { gesturePinching = false; },
-        onPalm: (walking) => { player.gestureWalk = walking; ui.gestureStatus(walking ? STR.handMagicWalk : ""); },
+        onPalm: (walking) => { player.gestureWalk = walking; if (!walking) player.gestureSteer = 0; ui.gestureStatus(walking ? STR.handMagicWalk : ""); },
+        onSteer: (amt) => { player.gestureSteer = amt; },
         onStatus: (t) => ui.gestureStatus(t),
         onStopped: () => gestureCleanup()    // camera died mid-session (lock/call)
       });
       await handMagic.start(ui.gesturePreviewContainer());
       ui.gestureActive(!!handMagic.running);
-      if (!handMagic.running) handMagic = null;
+      if (handMagic.running) ui.hideGestureGuide(5000);   // linger 5s after ready, then fade
+      else { handMagic = null; ui.hideGestureGuide(); }
     } catch (e) {
       console.warn("hand magic failed", e);
       ui.gestureStatus(STR.handMagicError);
+      ui.hideGestureGuide();
       handMagic = null;
     }
     gestureBusy = false;
@@ -376,6 +382,9 @@ async function boot() {
     if (look.dx || look.dy) followCam.applyLook(look.dx, look.dy);
     const zoom = input.consumeZoom();
     if (zoom) followCam.applyZoom(zoom);
+    // hand-magic: hand left/right of screen turns the camera while palm-walking
+    if (player.gestureWalk && player.gestureSteer)
+      followCam.yaw += player.gestureSteer * CFG.gestureSteerRate * CFG.gestureSteerSign * dt;
 
     player.update(dt, input.axis(), input.jumpHeld(), followCam.forward(), world, audio);
     jaspea.update(dt, simTime, player.body.pos);

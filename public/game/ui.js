@@ -793,6 +793,37 @@ export class UI {
     chip.classList.toggle("show", !!text);
   }
 
+  // little illustrated guide shown while Hand Magic warms up, so the player knows
+  // which gesture does what before the camera is even ready
+  showGestureGuide() {
+    const S = this.str;
+    let g = this._els.gguide;
+    if (!g) {
+      g = el("div", "pp-gguide", this.root);
+      const title = el("div", "pp-gguide-title", g);
+      title.textContent = S.gestureGuideTitle ?? "";
+      const rows = [
+        ["✋", S.gestureGuideWalk], ["👈👉", S.gestureGuideTurn], ["🤏", S.gestureGuidePinch]
+      ];
+      for (const [icon, label] of rows) {
+        const row = el("div", "pp-gguide-row", g);
+        const ic = el("span", "pp-gguide-ico", row); ic.textContent = icon;
+        const tx = el("span", "pp-gguide-tx", row); tx.textContent = label ?? "";
+      }
+      this._els.gguide = g;
+    }
+    clearTimeout(this._gguideT);
+    g.classList.add("show");
+  }
+
+  hideGestureGuide(delay = 0) {
+    const g = this._els.gguide;
+    if (!g) return;
+    clearTimeout(this._gguideT);
+    if (delay > 0) this._gguideT = setTimeout(() => g.classList.remove("show"), delay);
+    else g.classList.remove("show");
+  }
+
   gesturePreviewContainer() {
     return this._els.gpreview;
   }
@@ -917,6 +948,16 @@ const CSS = `
   background: var(--cream); border-radius: 14px; padding: 8px 12px;
   font-size: 12px; font-weight: 700; line-height: 1.3; box-shadow: var(--shadow); }
 .pp-chip.show { display: block; }
+.pp-gguide { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) scale(.96);
+  z-index: 23; display: none; opacity: 0; pointer-events: none;
+  background: var(--cream); color: #3f3429; border-radius: 20px; padding: 18px 22px;
+  box-shadow: var(--shadow); width: min(82vw, 320px);
+  transition: opacity .25s ease, transform .25s ease; }
+.pp-gguide.show { display: block; opacity: 1; transform: translate(-50%,-50%) scale(1); }
+.pp-gguide-title { font-size: 16px; font-weight: 800; text-align: center; margin-bottom: 12px; }
+.pp-gguide-row { display: flex; align-items: center; gap: 12px; padding: 6px 0; }
+.pp-gguide-ico { font-size: 24px; width: 44px; text-align: center; flex-shrink: 0; }
+.pp-gguide-tx { font-size: 14px; font-weight: 700; line-height: 1.25; }
 
 /* ---- quest card -------------------------------------------------------------- */
 .pp-quest { position: absolute; top: calc(var(--st) + 96px); right: calc(var(--sr) + 8px);

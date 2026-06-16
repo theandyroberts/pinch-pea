@@ -34,6 +34,10 @@ export const CFG = {
   gestureEveryNFrames: 2,
   pinchOn: 0.35, pinchOff: 0.45, pinchDebounceMs: 80,
   palmWalkHoldMs: 250,
+  // palm-walk steering: which side of the screen the hand is on turns you that way.
+  gestureSteerDead: 0.18,   // center dead zone (fraction of half-width) — hand here = straight
+  gestureSteerRate: 1.7,    // rad/s of turn at full deflection
+  gestureSteerSign: -1,     // flip to +1 if left/right feel reversed on-device
 
   growTimeS: 22,           // sapling -> tree
   flowerGrowS: 6,

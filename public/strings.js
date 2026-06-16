@@ -22,6 +22,10 @@ export const STR = {
 
   handMagicLoading: "Warming up the magic camera…",
   handMagicReady: "Wave your hand! Pinch fingers to grab, open palm to walk.",
+  gestureGuideTitle: "Move with your hand!",
+  gestureGuideWalk: "Open hand to walk",
+  gestureGuideTurn: "Move hand left or right to turn",
+  gestureGuidePinch: "Pinch fingers to grab & build",
   handMagicDenied: "No camera this time — fingers on the screen work great too!",
   handMagicError: "The magic camera is napping. Touch still works!",
   handMagicWalk: "Walking!",

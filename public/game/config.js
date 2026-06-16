@@ -40,6 +40,7 @@ export const CFG = {
 
   volumes: { music: 0.22, sfx: 0.8, ambient: 0.5 },
 
+  stackMax: 999,           // max of any one block a player can hold (badge fits 3 digits)
   startInventory: { pink: 24, cream: 47, yellow: 16, blue: 9, wood: 32, lavender: 5 },
   unlockBundles: {
     cozy_home: { lavender: 20 },

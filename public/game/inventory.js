@@ -15,7 +15,7 @@ export class Inventory {
   add(key, n = 1) {
     if (!(key in this.counts)) return false;
     const before = this.counts[key];
-    this.counts[key] = Math.min(99, before + n);
+    this.counts[key] = Math.min(CFG.stackMax, before + n);
     this.onChange && this.onChange();
     return this.counts[key] !== before;
   }

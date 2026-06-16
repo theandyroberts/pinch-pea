@@ -143,23 +143,33 @@ async function boot() {
   });
   if (data?.mode || data?.growing) interact.load({ mode: data.mode, growing: data.growing });
 
-  // Some quests need a tool that isn't on the 6-slot hotbar (Sprout, Flower). Put it
-  // straight into the player's hand in build mode so "tap the ground" just works; on
-  // first reach (reveal) also flash the Clay box open + a Jaspea hint, so the kid
-  // learns those tools live in the drawer.
-  const QUEST_TOOL = { growTree: "sapling", flowers: "flower" };
-  const QUEST_TOOL_TIP = { growTree: "sproutTip", flowers: "flowerPlantTip" };
+  // When a quest begins, set the player up so its action "just works": the right
+  // mode (build vs pinch), the right tool if it lives off the 6-slot hotbar (Sprout,
+  // Flower), and a Jaspea hint. Off-hotbar tools also flash the Clay box open the
+  // first time, so the kid learns where those tools live.
+  const QUEST_SETUP = {
+    place:       { mode: "build", tip: "buildTip" },
+    pinch:       { mode: "pinch", tip: "pinchTip" },
+    hugJaspea:   {                tip: "hugTip" },
+    growTree:    { mode: "build", tool: "sapling", reveal: true, tip: "sproutTip" },
+    flowers:     { mode: "build", tool: "flower",  reveal: true, tip: "flowerPlantTip" },
+    standHeight: { mode: "build", tip: "buildTip" },
+    bridge:      { mode: "build", tip: "buildTip" }
+  };
   function equipForQuest(q, reveal) {
     if (!q) return;
     const def = (CFG.quests || []).find(d => d.id === q.id);
-    const tool = def && QUEST_TOOL[def.type];
-    if (!tool) return;
-    inventory.select(tool);
-    interact.setMode("build");
+    const s = def && QUEST_SETUP[def.type];
+    if (!s) return;
+    if (s.tool) inventory.select(s.tool);
+    if (s.mode) interact.setMode(s.mode);
     ui.refresh();
-    if (reveal) { ui.flashDrawer?.(); jaspea.sayKey?.(QUEST_TOOL_TIP[def.type]); }
+    if (reveal) {
+      if (s.reveal) ui.flashDrawer?.();
+      if (s.tip) jaspea.sayKey?.(s.tip);
+    }
   }
-  equipForQuest(quests.activeQuest(), false);   // loaded straight into a planting quest?
+  equipForQuest(quests.activeQuest(), false);   // boot straight into the active quest's setup
 
   const input = new Input(canvas);
   input.onModeToggle = () => interact.toggleMode();

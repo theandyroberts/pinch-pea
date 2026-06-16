@@ -48,10 +48,10 @@ export const CFG = {
   // type drives how progress is measured; goal meaning depends on type:
   //   pinch/place/flowers/bridge → a count · growTree/hugJaspea → a count
   //   standHeight → target block-Y to stand on (player-placed) · blueprint → the cozy_home shell
-  questSaveVersion: 2,
+  questSaveVersion: 3,
   quests: [
-    { id: "pinch3",        type: "pinch",       goal: 3  },
-    { id: "place5",        type: "place",       goal: 5  },
+    { id: "build_first",   type: "place",       goal: 3  },  // building first — his natural instinct, instant win
+    { id: "pinch3",        type: "pinch",       goal: 3  },  // then the signature "pinch" verb
     { id: "hug_jaspea",    type: "hugJaspea",   goal: 3  },
     { id: "grow_tree",     type: "growTree",    goal: 1  },
     { id: "flower_garden", type: "flowers",     goal: 5  },
@@ -62,8 +62,8 @@ export const CFG = {
     { id: "cozy_home",     type: "blueprint"             }
   ],
   unlockBundles: {
+    build_first:   { yellow: 10 },
     pinch3:        { cream: 10 },
-    place5:        { yellow: 10 },
     hug_jaspea:    { blue: 10 },
     grow_tree:     { wood: 12 },
     flower_garden: { yellow: 24 },

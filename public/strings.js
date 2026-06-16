@@ -17,7 +17,7 @@ export const STR = {
   btnSfx: "Sounds",
   btnPhoto: "Photo",
 
-  modePinch: "Pinch mode — tap a block to squish it up!",
+  modePinch: "Pinch mode — tap a block to pick it up!",
   modeBuild: "Build mode — tap the ground to place clay!",
 
   handMagicLoading: "Warming up the magic camera…",
@@ -29,8 +29,8 @@ export const STR = {
 
   questTitle: "Make your world!",
   quests: {
-    pinch3: { name: "Squish up 3 blocks of clay!", done: "Nice squishing! Your pockets are full!" },
-    place5: { name: "Build with 5 blocks of clay!", done: "Look what you made!" },
+    build_first: { name: "Stack 3 blocks of clay!", done: "Look what you built!" },
+    pinch3: { name: "Pinch 3 blocks to pick them up!", done: "Nice pinching! Your pockets are full!" },
     hug_jaspea: { name: "Give Jaspea 3 squishy hugs!", done: "Hee hee! Jaspea loves hugs!" },
     grow_tree: { name: "Plant a sprout and grow a tree!", done: "A whole tree from one little sprout!" },
     flower_garden: { name: "Plant 5 happy flowers!", done: "The garden smells amazing!" },
@@ -59,6 +59,7 @@ export const STR = {
     flowerTip: "Pinch the little flowers in the meadow!",
     sproutTip: "I put a sprout in your hand from the Clay box — tap the ground to plant it!",
     flowerPlantTip: "I gave you flowers from the Clay box — tap the ground to plant them!",
+    hugTip: "Tap me to give a squishy hug!",
     rescue: "Hup! Up you go, Peathan!"
   },
 
